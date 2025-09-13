@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 
+# Optional Dependency: Pillow (for icon resizing). Install with: pip install Pillow
+
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
 import threading
 import urllib.request
+import urllib.parse
+import json
 
-# set default dir to root
-os.chdir('/')
+from about import show_about_window
 
 # --- Constants for URLs ---
 WINDOWS_RUNTIME_URL = "https://runtimes.kazeta.org/windows-1.0.kzr"
 LINUX_RUNTIME_URL = "https://runtimes.kazeta.org/linux-1.0.kzr"
 SEGA_GENESIS_RUNTIME_URL = "https://runtimes.kazeta.org/megadrive-1.0.kzr"
+
+# SteamGridDB API key file
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "kzi-generator")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+# --- Pillow Dependency Check ---
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 class KziGeneratorApp:
     """
@@ -26,6 +40,9 @@ class KziGeneratorApp:
         self.root.title("KZI Cartridge Generator")
         self.root.geometry("600x600") # Increased height for the about button
         self.root.resizable(True, True)
+
+        # set default dir to root
+        os.chdir('/')
 
         # --- Style Configuration ---
         style = ttk.Style()
@@ -43,88 +60,55 @@ class KziGeneratorApp:
         # --- Input Fields ---
         ttk.Label(main_frame, text="Game Name:").grid(row=0, column=0, sticky=tk.W)
         self.game_name_var = tk.StringVar()
-        ttk.Entry(main_frame, textvariable=self.game_name_var).grid(row=0, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.Entry(main_frame, textvariable=self.game_name_var).grid(row=0, column=1, columnspan=3, sticky="ew", pady=5)
 
         ttk.Label(main_frame, text="Game ID:").grid(row=1, column=0, sticky=tk.W)
         self.game_id_var = tk.StringVar()
-        ttk.Entry(main_frame, textvariable=self.game_id_var).grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.Entry(main_frame, textvariable=self.game_id_var).grid(row=1, column=1, columnspan=3, sticky="ew", pady=5)
 
         ttk.Label(main_frame, text="Executable Path:").grid(row=2, column=0, sticky=tk.W)
         self.exec_path_var = tk.StringVar()
-        ttk.Entry(main_frame, textvariable=self.exec_path_var, state="readonly").grid(row=2, column=1, sticky="ew", pady=5)
-        ttk.Button(main_frame, text="Browse...", command=self.browse_executable).grid(row=2, column=2, padx=(5,0))
+        ttk.Entry(main_frame, textvariable=self.exec_path_var, state="readonly").grid(row=2, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.Button(main_frame, text="Browse...", command=self.browse_executable).grid(row=2, column=3, padx=(5,0))
 
         ttk.Label(main_frame, text="Icon Path:").grid(row=3, column=0, sticky=tk.W)
         self.icon_path_var = tk.StringVar()
         ttk.Entry(main_frame, textvariable=self.icon_path_var, state="readonly").grid(row=3, column=1, sticky="ew", pady=5)
         ttk.Button(main_frame, text="Browse...", command=self.browse_icon).grid(row=3, column=2, padx=(5,0))
+        self.fetch_icon_button = ttk.Button(main_frame, text="Fetch Icon", command=self.start_fetch_icon)
+        self.fetch_icon_button.grid(row=3, column=3, padx=(5,0))
 
         ttk.Label(main_frame, text="GameScope Options:").grid(row=4, column=0, sticky=tk.W)
         self.gamescope_options_var = tk.StringVar()
-        ttk.Entry(main_frame, textvariable=self.gamescope_options_var).grid(row=4, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.Entry(main_frame, textvariable=self.gamescope_options_var).grid(row=4, column=1, columnspan=3, sticky="ew", pady=5)
 
         ttk.Label(main_frame, text="Runtime:").grid(row=5, column=0, sticky=tk.W)
         self.runtime_var = tk.StringVar(value="linux")
         runtime_options = ["linux", "windows", "megadrive", "none"]
-        ttk.OptionMenu(main_frame, self.runtime_var, runtime_options[0], *runtime_options).grid(row=5, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.OptionMenu(main_frame, self.runtime_var, runtime_options[0], *runtime_options).grid(row=5, column=1, columnspan=3, sticky="ew", pady=5)
 
         # --- Generate Button ---
-        ttk.Button(main_frame, text="Generate .kzi File", command=self.generate_kzi).grid(row=6, column=0, columnspan=3, pady=(15, 0))
+        ttk.Button(main_frame, text="Generate .kzi File", command=self.generate_kzi).grid(row=6, column=0, columnspan=4, pady=(15, 0))
 
         # --- Separator and Download Section ---
-        ttk.Separator(main_frame, orient='horizontal').grid(row=7, column=0, columnspan=3, sticky='ew', pady=20)
+        ttk.Separator(main_frame, orient='horizontal').grid(row=7, column=0, columnspan=4, sticky='ew', pady=20)
         
         ttk.Label(main_frame, text="Download Runtimes (.kzr)", style="Bold.TLabel").grid(row=8, column=0, columnspan=3)
 
         self.win_dl_button = ttk.Button(main_frame, text="Download Windows Runtime", command=lambda: self.start_download(WINDOWS_RUNTIME_URL, "windows-1.0.kzr"))
-        self.win_dl_button.grid(row=9, column=0, columnspan=3, sticky='ew', pady=5)
+        self.win_dl_button.grid(row=9, column=0, columnspan=4, sticky='ew', pady=5)
 
         self.linux_dl_button = ttk.Button(main_frame, text="Download Linux Runtime", command=lambda: self.start_download(LINUX_RUNTIME_URL, "linux-1.0.kzr"))
-        self.linux_dl_button.grid(row=10, column=0, columnspan=3, sticky='ew', pady=5)
+        self.linux_dl_button.grid(row=10, column=0, columnspan=4, sticky='ew', pady=5)
         
         self.megadrive_dl_button = ttk.Button(main_frame, text="Download Sega Genesis/Mega Drive Runtime", command=lambda: self.start_download(SEGA_GENESIS_RUNTIME_URL, "megadrive-1.0.kzr"))
-        self.megadrive_dl_button.grid(row=11, column=0, columnspan=3, sticky='ew', pady=5)
+        self.megadrive_dl_button.grid(row=11, column=0, columnspan=4, sticky='ew', pady=5)
 
         self.progress_bar = ttk.Progressbar(main_frame, orient='horizontal', length=100, mode='determinate')
-        self.progress_bar.grid(row=12, column=0, columnspan=3, sticky='ew', pady=(10, 0))
+        self.progress_bar.grid(row=12, column=0, columnspan=4, sticky='ew', pady=(10, 0))
 
         # --- About Button ---
-        ttk.Button(main_frame, text="About", command=self.show_about_window).grid(row=13, column=0, columnspan=3, pady=(20, 0))
-
-    def show_about_window(self):
-        """
-        Displays a modal 'About' window with application information.
-        """
-        about_window = tk.Toplevel(self.root)
-        about_window.title("About KZI Cartridge Generator")
-        about_window.geometry("500x230")
-        about_window.resizable(False, False)
-        
-        # Make the window modal
-        about_window.transient(self.root)
-        about_window.grab_set()
-
-        about_frame = ttk.Frame(about_window, padding="15")
-        about_frame.pack(expand=True, fill="both")
-
-        about_text = (
-            "GUI for making .kzi (Kazeta information file) files that are\n"
-            "necessary for Kazeta cartridges to work.\n\n"
-            "Kazeta Cartridge Generator v1.0 by Linux Gaming Central:\n"
-            "(this will eventually have the link to the source code on GitHub)\n\n"
-            "Copyright (C) 2025 Linux Gaming Central\n\n"
-            "Kazeta home page: https://kazeta.org/"
-        )
-
-        about_label = ttk.Label(about_frame, text=about_text, justify=tk.LEFT, font=('Helvetica', 10))
-        about_label.pack(pady=(0, 15), anchor="w")
-
-        close_button = ttk.Button(about_frame, text="Close", command=about_window.destroy)
-        close_button.pack()
-        
-        # Wait until the about window is closed before allowing main window interaction
-        self.root.wait_window(about_window)
-
+        ttk.Button(main_frame, text="About", command=show_about_window).grid(row=13, column=0, columnspan=4, pady=(20, 0))
 
     def browse_executable(self):
         filepath = filedialog.askopenfilename(title="Select Game Executable")
@@ -138,6 +122,163 @@ class KziGeneratorApp:
         )
         if filepath:
             self.icon_path_var.set(filepath)
+
+    # SteamGridDB API stuff
+    def load_api_key(self):
+        """Loads the API key from the config file."""
+        if not os.path.exists(CONFIG_FILE):
+            return None
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get("steamgriddb_api_key")
+        except (IOError, json.JSONDecodeError):
+            return None
+
+    def save_api_key(self, api_key):
+        """Saves the API key to the config file."""
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump({"steamgriddb_api_key": api_key}, f)
+        except IOError:
+            messagebox.showwarning("Config Error", "Could not save the API key to the configuration file.")
+
+    def start_fetch_icon(self):
+        """
+        Validates input and starts the icon fetching process in a new thread.
+        """
+        if not PIL_AVAILABLE:
+            messagebox.showinfo(
+                "Dependency Missing",
+                "The 'Pillow' library is required to fetch and resize icons.\n\n"
+                "Please install it by running:\npip install Pillow"
+            )
+            return
+
+        api_key = self.load_api_key()
+        if not api_key:
+            api_key = self.ask_for_api_key()
+        
+        if not api_key:
+            return # User cancelled or entered nothing
+
+        game_name = self.game_name_var.get().strip()
+        exec_path = self.exec_path_var.get().strip()
+
+        if not game_name:
+            messagebox.showerror("Input Required", "Please enter a Game Name first.")
+            return
+        
+        if not exec_path:
+            messagebox.showerror("Input Required", "Please select an Executable Path first.\nThe icon will be saved relative to it.")
+            return
+
+        # Run the fetch operation in a separate thread to keep the GUI responsive
+        fetch_thread = threading.Thread(
+            target=self.fetch_icon_from_steamgriddb, 
+            args=(api_key, game_name, exec_path), 
+            daemon=True
+        )
+        fetch_thread.start()
+
+    def ask_for_api_key(self):
+        """
+        Prompts the user for their API key and saves it for future use.
+        Returns the key if provided, otherwise None.
+        """
+        key = simpledialog.askstring(
+            "API Key Required", 
+            "Please enter your SteamGridDB API key:",
+            parent=self.root
+        )
+        if key:
+            stripped_key = key.strip()
+            self.save_api_key(stripped_key)
+            return stripped_key
+        return None
+
+    def fetch_icon_from_steamgriddb(self, api_key, game_name, exec_path):
+        """
+        Searches for, downloads, and sets the game icon from SteamGridDB.
+        This method is designed to run in a background thread.
+        """
+        try:
+            self.fetch_icon_button.config(state=tk.DISABLED)
+
+            # 1. Search for the game ID
+            search_url = f"https://www.steamgriddb.com/api/v2/search/autocomplete/{urllib.parse.quote(game_name)}"
+            headers = {"Authorization": f"Bearer {api_key}", "User-Agent": "KziGenerator/1.0"}
+            req = urllib.request.Request(search_url, headers=headers)
+            
+            with urllib.request.urlopen(req) as response:
+                if response.status != 200:
+                    raise ConnectionError(f"API Error: Status {response.status}")
+                search_data = json.loads(response.read().decode())
+
+            if not search_data.get("success") or not search_data.get("data"):
+                messagebox.showerror("Not Found", f"Could not find an entry for '{game_name}' on SteamGridDB.")
+                return
+
+            game_id = search_data["data"][0]["id"]
+            icon_url_to_download = None
+            resize_needed = False
+
+            # 2. Try to find a 64x64 PNG
+            icons_url_64 = f"https://www.steamgriddb.com/api/v2/icons/game/{game_id}?dimensions=64"
+            req = urllib.request.Request(icons_url_64, headers=headers)
+            with urllib.request.urlopen(req) as response:
+                icons_data = json.loads(response.read().decode())
+                if icons_data.get("success") and icons_data.get("data"):
+                    icon_url_to_download = next((icon.get("url") for icon in icons_data["data"] if icon.get("mime") == "image/png"), None)
+
+            # 3. If not found, try to find a 32x32 PNG
+            if not icon_url_to_download:
+                icons_url_32 = f"https://www.steamgriddb.com/api/v2/icons/game/{game_id}?dimensions=32"
+                req = urllib.request.Request(icons_url_32, headers=headers)
+                with urllib.request.urlopen(req) as response:
+                    icons_data = json.loads(response.read().decode())
+                    if icons_data.get("success") and icons_data.get("data"):
+                        icon_url_to_download = next((icon.get("url") for icon in icons_data["data"] if icon.get("mime") == "image/png"), None)
+
+            # 4. If still not found, get any PNG and flag for resizing
+            if not icon_url_to_download:
+                resize_needed = True
+                icons_url_any = f"https://www.steamgriddb.com/api/v2/icons/game/{game_id}"
+                req = urllib.request.Request(icons_url_any, headers=headers)
+                with urllib.request.urlopen(req) as response:
+                    icons_data = json.loads(response.read().decode())
+                    if icons_data.get("success") and icons_data.get("data"):
+                        icon_url_to_download = next((icon.get("url") for icon in icons_data["data"] if icon.get("mime") == "image/png"), None)
+            
+            # 5. Check if any icon was found and process it
+            if not icon_url_to_download:
+                messagebox.showwarning("No Icon", f"Found '{game_name}', but no suitable PNG icon is available.")
+                return
+
+            # 6. Define save path in the parent directory of the executable
+            exec_directory = os.path.dirname(exec_path)
+            parent_directory = os.path.dirname(exec_directory)
+            icon_save_path = os.path.join(parent_directory, "icon.png")
+
+            # 7. Download and possibly resize the icon
+            if resize_needed:
+                temp_path, _ = urllib.request.urlretrieve(icon_url_to_download)
+                with Image.open(temp_path) as img:
+                    img_resized = img.resize((64, 64), Image.Resampling.LANCZOS)
+                    img_resized.save(icon_save_path, "PNG")
+                os.remove(temp_path) # Clean up temporary file
+            else:
+                urllib.request.urlretrieve(icon_url_to_download, icon_save_path)
+            
+            self.icon_path_var.set(icon_save_path)
+            messagebox.showinfo("Success", f"Icon successfully downloaded and set to:\n{icon_save_path}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while fetching the icon: {e}")
+        
+        finally:
+            self.fetch_icon_button.config(state=tk.NORMAL)
 
     def generate_kzi(self):
         game_name = self.game_name_var.get().strip()
