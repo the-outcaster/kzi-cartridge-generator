@@ -18,7 +18,7 @@ LINUX_RUNTIME_URL = "https://runtimes.kazeta.org/linux-1.0.kzr"
 SEGA_GENESIS_RUNTIME_URL = "https://runtimes.kazeta.org/megadrive-1.0.kzr"
 
 # SteamGridDB API key file
-CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "kzi-generator")
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "kzi-cartridge-generator")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 # --- Pillow Dependency Check ---
@@ -265,7 +265,7 @@ class KziGeneratorApp:
             if resize_needed:
                 temp_path, _ = urllib.request.urlretrieve(icon_url_to_download)
                 with Image.open(temp_path) as img:
-                    img_resized = img.resize((64, 64), Image.Resampling.LANCZOS)
+                    img_resized = img.resize((64, 64), Image.LANCZOS)
                     img_resized.save(icon_save_path, "PNG")
                 os.remove(temp_path) # Clean up temporary file
             else:
