@@ -102,7 +102,7 @@ def find_and_download_icon(api_key, game_name, exec_path, ssl_context):
             raise ImportError("Pillow is required to resize the icon.")
         temp_path, _ = urllib.request.urlretrieve(icon_url_to_download)
         with Image.open(temp_path) as img:
-            img_resized = img.resize((64, 64), Image.Resampling.LANCZOS)
+            img_resized = img.resize((64, 64), Image.LANCZOS)
             img_resized.save(icon_save_path, "PNG")
         os.remove(temp_path)
     else:
