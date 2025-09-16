@@ -17,7 +17,7 @@ def show_about_window():
 	about_text = (
 	    "GUI for making .kzi (Kazeta information file) files that are\n"
 	    "necessary for Kazeta cartridges to work.\n\n"
-	    "Kazeta Cartridge Generator v1.2 by Linux Gaming Central:\n"
+	    "Kazeta Cartridge Generator v1.21 by Linux Gaming Central:\n"
 	    "https://github.com/the-outcaster/kzi-cartridge-generator\n\n"
 	    "Copyright (C) 2025 Linux Gaming Central\n\n"
 	    "Kazeta home page: https://kazeta.org/"
