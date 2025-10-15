@@ -7,11 +7,14 @@ import threading
 import os
 import getpass
 import time
+import re
 
 # Import from our other modules
-from steamgriddb_api import handle_fetch_icon_flow, ssl_context
+from steamgriddb_api import handle_fetch_icon_flow
 from about_window import show_about_window
 import urllib.request
+# Import the shared SSL context
+from steamgriddb_api import ssl_context
 
 
 def get_default_media_path():
@@ -37,19 +40,31 @@ class KziGeneratorApp:
             "NES": "https://runtimes.kazeta.org/nes-1.0.kzr",
             "SNES": "https://runtimes.kazeta.org/snes-1.0.kzr",
             "Sega Genesis/Mega Drive": "https://runtimes.kazeta.org/megadrive-1.1.kzr",
+            "Nintendo 64": "https://runtimes.kazeta.org/nintendo64-1.0.kzr",
         }
 
         # --- Variable setup ---
         self.game_name_var = tk.StringVar()
         self.game_id_var = tk.StringVar()
         self.exec_path_var = tk.StringVar()
+        self.params_var = tk.StringVar() # New variable for additional parameters
         self.icon_path_var = tk.StringVar()
         self.gamescope_var = tk.StringVar()
 
-        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive"]
+        # Link the game name variable to the ID generation function
+        self.game_name_var.trace_add("write", self._update_game_id)
+
+        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
         self.runtime_var = tk.StringVar(value=runtime_options[0])
 
         self.create_widgets(main_frame)
+
+    def _update_game_id(self, *args):
+        """Called whenever the game name is changed."""
+        game_name = self.game_name_var.get()
+        # Convert to lowercase and replace spaces with hyphens
+        game_id = game_name.lower().replace(' ', '-')
+        self.game_id_var.set(game_id)
 
     def create_widgets(self, parent):
         # Using a grid layout for better alignment
@@ -74,10 +89,15 @@ class KziGeneratorApp:
         self.exec_path_entry.grid(row=0, column=0, sticky="ew")
         tk.Button(exec_frame, text="Browse...", command=self.browse_executable).grid(row=0, column=1, padx=(5,0))
 
+        # Additional Parameters
+        tk.Label(parent, text="Additional Parameters:").grid(row=3, column=0, sticky="w", pady=2)
+        self.params_entry = tk.Entry(parent, textvariable=self.params_var)
+        self.params_entry.grid(row=3, column=1, sticky="ew", pady=2)
+
         # Icon Path
-        tk.Label(parent, text="Icon Path:").grid(row=3, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Icon Path:").grid(row=4, column=0, sticky="w", pady=2)
         icon_frame = tk.Frame(parent)
-        icon_frame.grid(row=3, column=1, sticky="ew")
+        icon_frame.grid(row=4, column=1, sticky="ew")
         icon_frame.columnconfigure(0, weight=1)
         self.icon_path_entry = tk.Entry(icon_frame, textvariable=self.icon_path_var)
         self.icon_path_entry.grid(row=0, column=0, sticky="ew")
@@ -86,19 +106,19 @@ class KziGeneratorApp:
         self.fetch_button.grid(row=0, column=2)
 
         # GameScope Options
-        tk.Label(parent, text="GameScope Options:").grid(row=4, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="GameScope Options:").grid(row=5, column=0, sticky="w", pady=2)
         self.gamescope_entry = tk.Entry(parent, textvariable=self.gamescope_var)
-        self.gamescope_entry.grid(row=4, column=1, sticky="ew", pady=2)
+        self.gamescope_entry.grid(row=5, column=1, sticky="ew", pady=2)
 
         # Runtime
-        tk.Label(parent, text="Runtime:").grid(row=5, column=0, sticky="w", pady=2)
-        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive"]
+        tk.Label(parent, text="Runtime:").grid(row=6, column=0, sticky="w", pady=2)
+        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
         self.runtime_menu = tk.OptionMenu(parent, self.runtime_var, *runtime_options)
-        self.runtime_menu.grid(row=5, column=1, sticky="ew", pady=2)
+        self.runtime_menu.grid(row=6, column=1, sticky="ew", pady=2)
 
         # --- Download Runtimes ---
         download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=10)
-        download_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=10)
+        download_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
         download_frame.columnconfigure(0, weight=1) # Center the button frame
 
         button_container = tk.Frame(download_frame)
@@ -109,14 +129,16 @@ class KziGeneratorApp:
         tk.Button(button_container, text="NES", command=lambda: self.download_runtime("NES")).pack(side=tk.LEFT, padx=5)
         tk.Button(button_container, text="SNES", command=lambda: self.download_runtime("SNES")).pack(side=tk.LEFT, padx=5)
         tk.Button(button_container, text="Sega Genesis/Mega Drive", command=lambda: self.download_runtime("Sega Genesis/Mega Drive")).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_container, text="Nintendo 64", command=lambda: self.download_runtime("Nintendo 64")).pack(side=tk.LEFT, padx=5)
 
         # --- Main Action Buttons ---
         bottom_bar = tk.Frame(parent)
-        bottom_bar.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(10,0))
-        bottom_bar.columnconfigure(0, weight=1) # Push buttons to sides
+        bottom_bar.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(10,0))
+        bottom_bar.columnconfigure(1, weight=1) # Push buttons to sides
 
-        tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=0, sticky="w")
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=1, sticky="e")
+        tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w")
+        tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=1)
+        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=2, sticky="e")
 
     def browse_executable(self):
         filetypes = [
@@ -125,6 +147,7 @@ class KziGeneratorApp:
             ("Linux Executables", "*.x86_64 *.sh *.AppImage"),
             ("NES ROMs", "*.nes"),
             ("SNES ROMs", "*.sfc"),
+            ("Nintendo 64 ROMs", "*.n64 *.z64"),
             ("Sega Genesis/Mega Drive ROMs", "*.bin"),
         ]
         filepath = filedialog.askopenfilename(
@@ -145,13 +168,13 @@ class KziGeneratorApp:
             self.icon_path_var.set(filepath)
 
     def start_fetch_icon(self):
-        # Pass self (the app instance) to the handler
         handle_fetch_icon_flow(self)
 
     def generate_kzi(self):
         game_name = self.game_name_var.get().strip()
         game_id = self.game_id_var.get().strip()
         exec_path = self.exec_path_var.get().strip()
+        params = self.params_var.get().strip()
         icon_path = self.icon_path_var.get().strip()
         gamescope_options = self.gamescope_var.get().strip()
         runtime = self.runtime_var.get()
@@ -167,7 +190,8 @@ class KziGeneratorApp:
         kzi_filepath = filedialog.asksaveasfilename(
             defaultextension=".kzi",
             filetypes=[("Kazeta Info files", "*.kzi")],
-            initialfile="cart.kzi",
+            initialdir=get_default_media_path(),
+            initialfile=f"{game_id}.kzi",
             title="Save .kzi File"
         )
         if not kzi_filepath:
@@ -176,13 +200,18 @@ class KziGeneratorApp:
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
             relative_exec_path = os.path.relpath(exec_path, kzi_dir)
+
+            # Handle quotes and additional parameters
+            if ' ' in relative_exec_path and not relative_exec_path.startswith('"'):
+                relative_exec_path = f'"{relative_exec_path}"'
+
+            if params:
+                relative_exec_path += f" {params}"
+
             relative_icon_path = os.path.relpath(icon_path, kzi_dir) if icon_path else ""
 
-            content = (
-                f"Name={game_name}\n"
-                f"Id={game_id}\n"
-                f"Exec={relative_exec_path}\n"
-            )
+            content = f"Name={game_name}\nId={game_id}\nExec={relative_exec_path}\n"
+
             if gamescope_options:
                 content += f"GameScopeOptions={gamescope_options}\n"
             if relative_icon_path:
@@ -195,6 +224,62 @@ class KziGeneratorApp:
             messagebox.showinfo("Success", f"Successfully generated {os.path.basename(kzi_filepath)}")
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred while generating the file: {e}")
+
+    def load_kzi_file(self):
+        kzi_filepath = filedialog.askopenfilename(
+            title="Load .kzi File",
+            initialdir=get_default_media_path(),
+            filetypes=((".kzi files", "*.kzi"), ("All files", "*.*"))
+        )
+        if not kzi_filepath:
+            return
+
+        # Clear existing fields
+        for var in [self.game_name_var, self.game_id_var, self.exec_path_var, self.params_var,
+                      self.icon_path_var, self.gamescope_var, self.runtime_var]:
+            var.set("")
+        self.runtime_var.set("none") # Default runtime
+
+        try:
+            kzi_dir = os.path.dirname(kzi_filepath)
+            with open(kzi_filepath, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if '=' not in line:
+                        continue
+
+                    key, value = line.split('=', 1)
+                    key = key.lower()
+
+                    if key == 'name':
+                        self.game_name_var.set(value)
+                    elif key == 'id':
+                        self.game_id_var.set(value)
+                    elif key == 'exec':
+                        # Handle paths with quotes and params
+                        exec_full_path = ""
+                        params = ""
+                        # Regex to find quoted string or first word
+                        match = re.match(r'^(?:"([^"]+)"|([^\s]+))(?:\s+(.*))?$', value)
+                        if match:
+                            path_part = match.group(1) or match.group(2)
+                            params = match.group(3) or ""
+                            exec_full_path = os.path.abspath(os.path.join(kzi_dir, path_part))
+
+                        self.exec_path_var.set(exec_full_path)
+                        self.params_var.set(params)
+
+                    elif key == 'icon':
+                        icon_full_path = os.path.abspath(os.path.join(kzi_dir, value))
+                        self.icon_path_var.set(icon_full_path)
+                    elif key == 'gamescopeoptions':
+                        self.gamescope_var.set(value)
+                    elif key == 'runtime':
+                        self.runtime_var.set(value)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load .kzi file: {e}")
+
 
     def download_runtime(self, name):
         url = self.runtime_urls[name]
@@ -224,15 +309,13 @@ class KziGeneratorApp:
                 start_time = time.time()
 
                 while True:
-                    # FIX: Increased buffer size for significantly faster downloads
-                    buffer = response.read(1024 * 1024) # 1 MB chunks
+                    buffer = response.read(1024 * 1024)
                     if not buffer:
                         break
 
                     out_file.write(buffer)
                     downloaded += len(buffer)
 
-                    # --- Update Progress UI ---
                     percent = (downloaded / total_size) * 100 if total_size > 0 else 0
                     elapsed_time = time.time() - start_time
                     speed = (downloaded / elapsed_time) / (1024 * 1024) if elapsed_time > 0 else 0

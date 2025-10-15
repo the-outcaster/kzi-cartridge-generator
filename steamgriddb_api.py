@@ -2,7 +2,7 @@
 # SteamGridDB API Handler for KZI File Generator
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, filedialog
 import threading
 import os
 import json
@@ -93,25 +93,37 @@ def handle_fetch_icon_flow(app_instance):
         messagebox.showwarning("API Key Missing", "Cannot fetch icon without an API key.")
         return
 
-    game_name = app_instance.game_name_entry.get().strip()
-    exec_path = app_instance.exec_path_entry.get().strip()
+    game_name = app_instance.game_name_var.get().strip()
 
     if not game_name:
         messagebox.showerror("Error", "Please enter a Game Name to search for an icon.")
         return
-    if not exec_path:
-        messagebox.showerror("Error", "Please define the Executable Path first to determine where to save the icon.")
+
+    save_path = filedialog.asksaveasfilename(
+        title="Save Icon As",
+        initialfile="icon.png",
+        defaultextension=".png",
+        filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+    )
+    if not save_path:
         return
 
     thread = threading.Thread(
         target=_fetch_icon_worker,
-        args=(app_instance, api_key, game_name, exec_path),
+        args=(app_instance, api_key, game_name, save_path),
         daemon=True
     )
     thread.start()
 
+# --- Helper function for showing errors on the main thread ---
+def _show_error_on_main_thread(exc):
+    """Safely displays an exception message in a messagebox on the GUI thread."""
+    traceback.print_exc() # Print full error to console for debugging
+    error_message = f"An error occurred while fetching the icon:\n\n{type(exc).__name__}: {exc}"
+    messagebox.showerror("Error", error_message)
+
 # --- Worker Thread for API Calls ---
-def _fetch_icon_worker(app_instance, api_key, game_name, exec_path):
+def _fetch_icon_worker(app_instance, api_key, game_name, save_path):
     """
     Performs the actual API calls and image processing in the background.
     """
@@ -168,9 +180,6 @@ def _fetch_icon_worker(app_instance, api_key, game_name, exec_path):
         with urllib.request.urlopen(req, context=ssl_context) as response:
             image_data = response.read()
 
-        save_dir = os.path.dirname(os.path.dirname(exec_path))
-        save_path = os.path.join(save_dir, "icon.png")
-
         # Step 5: Resize if necessary
         if resize_needed:
             if not PIL_AVAILABLE:
@@ -184,17 +193,13 @@ def _fetch_icon_worker(app_instance, api_key, game_name, exec_path):
                 f.write(image_data)
 
         def update_gui():
-            app_instance.icon_path_entry.delete(0, tk.END)
-            app_instance.icon_path_entry.insert(0, save_path)
+            app_instance.icon_path_var.set(save_path)
             messagebox.showinfo("Success", f"Icon downloaded and saved to:\n{save_path}")
 
         app_instance.root.after(0, update_gui)
 
     except Exception as e:
-        traceback.print_exc()
-        def show_error():
-            error_message = f"An error occurred while fetching the icon:\n\n{type(e).__name__}: {e}"
-            messagebox.showerror("Error", error_message)
-
-        app_instance.root.after(0, show_error)
+        # FIX: Pass the exception object directly to the function scheduled with 'after'.
+        # This avoids the lambda scoping issue entirely.
+        app_instance.root.after(0, _show_error_on_main_thread, e)
 
