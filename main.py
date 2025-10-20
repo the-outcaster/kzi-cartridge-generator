@@ -8,6 +8,9 @@ import os
 import getpass
 import time
 import re
+import subprocess
+import shlex
+import shutil
 
 # Import from our other modules
 from steamgriddb_api import handle_fetch_icon_flow
@@ -25,6 +28,54 @@ def get_default_media_path():
         if os.path.isdir(path):
             return path
     return os.path.expanduser("~")
+
+def is_steam_running():
+    """Checks if a Steam process is currently running using pgrep."""
+    try:
+        subprocess.check_call(['pgrep', '-x', 'steam'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def run_command_in_new_terminal(command_list, env=None, cwd=None):
+    """
+    Tries to run a command in a new terminal window, with an optional environment and working directory.
+    The window will remain open after the command finishes.
+    """
+    cd_command = f'cd {shlex.quote(cwd)} && ' if cwd else ''
+    command_string = shlex.join(command_list)
+
+    wrapper_script = (
+        f'{cd_command}{command_string};'
+        ' echo;'
+        ' echo "----------------------------------------";'
+        ' echo "Process finished. Press Enter to close this window.";'
+        ' read'
+    )
+
+    terminals = [
+        ('konsole',        '-e'),
+        ('gnome-terminal', '--'),
+        ('xfce4-terminal', '-e'),
+        ('xterm',          '-e'),
+    ]
+
+    for term, flag in terminals:
+        if shutil.which(term):
+            try:
+                final_command = [term, flag, 'bash', '-c', wrapper_script]
+                subprocess.Popen(final_command, env=env)
+                return
+            except Exception as e:
+                print(f"Warning: Failed to launch with {term}: {e}")
+                continue
+
+    messagebox.showerror(
+        "Terminal Not Found",
+        "Could not automatically launch a terminal window.\n"
+        "Please ensure a standard terminal is installed (e.g., konsole, gnome-terminal, xterm)."
+    )
+
 
 class KziGeneratorApp:
     def __init__(self, root):
@@ -47,11 +98,11 @@ class KziGeneratorApp:
         self.game_name_var = tk.StringVar()
         self.game_id_var = tk.StringVar()
         self.exec_path_var = tk.StringVar()
-        self.params_var = tk.StringVar() # New variable for additional parameters
+        self.params_var = tk.StringVar()
         self.icon_path_var = tk.StringVar()
         self.gamescope_var = tk.StringVar()
+        self.proton_path_var = tk.StringVar()
 
-        # Link the game name variable to the ID generation function
         self.game_name_var.trace_add("write", self._update_game_id)
 
         runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
@@ -60,44 +111,37 @@ class KziGeneratorApp:
         self.create_widgets(main_frame)
 
     def _update_game_id(self, *args):
-        """Called whenever the game name is changed."""
         game_name = self.game_name_var.get()
-        # Convert to lowercase and replace spaces with hyphens
         game_id = game_name.lower().replace(' ', '-')
         self.game_id_var.set(game_id)
 
     def create_widgets(self, parent):
-        # Using a grid layout for better alignment
         parent.columnconfigure(1, weight=1)
 
-        # Game Name
-        tk.Label(parent, text="Game Name:").grid(row=0, column=0, sticky="w", pady=2)
+        row_index = 0
+        tk.Label(parent, text="Game Name:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         self.game_name_entry = tk.Entry(parent, textvariable=self.game_name_var, width=50)
-        self.game_name_entry.grid(row=0, column=1, sticky="ew", pady=2)
+        self.game_name_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
-        # Game ID
-        tk.Label(parent, text="Game ID:").grid(row=1, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Game ID:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         self.game_id_entry = tk.Entry(parent, textvariable=self.game_id_var)
-        self.game_id_entry.grid(row=1, column=1, sticky="ew", pady=2)
+        self.game_id_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
-        # Executable Path
-        tk.Label(parent, text="Executable Path:").grid(row=2, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Executable Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         exec_frame = tk.Frame(parent)
-        exec_frame.grid(row=2, column=1, sticky="ew")
+        exec_frame.grid(row=row_index-1, column=1, sticky="ew")
         exec_frame.columnconfigure(0, weight=1)
         self.exec_path_entry = tk.Entry(exec_frame, textvariable=self.exec_path_var)
         self.exec_path_entry.grid(row=0, column=0, sticky="ew")
         tk.Button(exec_frame, text="Browse...", command=self.browse_executable).grid(row=0, column=1, padx=(5,0))
 
-        # Additional Parameters
-        tk.Label(parent, text="Additional Parameters:").grid(row=3, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Additional Parameters:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         self.params_entry = tk.Entry(parent, textvariable=self.params_var)
-        self.params_entry.grid(row=3, column=1, sticky="ew", pady=2)
+        self.params_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
-        # Icon Path
-        tk.Label(parent, text="Icon Path:").grid(row=4, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Icon Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         icon_frame = tk.Frame(parent)
-        icon_frame.grid(row=4, column=1, sticky="ew")
+        icon_frame.grid(row=row_index-1, column=1, sticky="ew")
         icon_frame.columnconfigure(0, weight=1)
         self.icon_path_entry = tk.Entry(icon_frame, textvariable=self.icon_path_var)
         self.icon_path_entry.grid(row=0, column=0, sticky="ew")
@@ -105,40 +149,42 @@ class KziGeneratorApp:
         self.fetch_button = tk.Button(icon_frame, text="Fetch from SteamGridDB", command=self.start_fetch_icon)
         self.fetch_button.grid(row=0, column=2)
 
-        # GameScope Options
-        tk.Label(parent, text="GameScope Options:").grid(row=5, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="GameScope Options:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         self.gamescope_entry = tk.Entry(parent, textvariable=self.gamescope_var)
-        self.gamescope_entry.grid(row=5, column=1, sticky="ew", pady=2)
+        self.gamescope_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
-        # Runtime
-        tk.Label(parent, text="Runtime:").grid(row=6, column=0, sticky="w", pady=2)
+        tk.Label(parent, text="Runtime:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
         self.runtime_menu = tk.OptionMenu(parent, self.runtime_var, *runtime_options)
-        self.runtime_menu.grid(row=6, column=1, sticky="ew", pady=2)
+        self.runtime_menu.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
-        # --- Download Runtimes ---
+        tk.Label(parent, text="Proton/Wine Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
+        proton_frame = tk.Frame(parent)
+        proton_frame.grid(row=row_index-1, column=1, sticky="ew")
+        proton_frame.columnconfigure(0, weight=1)
+        self.proton_path_entry = tk.Entry(proton_frame, textvariable=self.proton_path_var)
+        self.proton_path_entry.grid(row=0, column=0, sticky="ew")
+        tk.Button(proton_frame, text="Browse...", command=self.browse_proton).grid(row=0, column=1, padx=(5,0))
+
         download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=10)
-        download_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
-        download_frame.columnconfigure(0, weight=1) # Center the button frame
+        download_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=10); row_index += 1
+        download_frame.columnconfigure(0, weight=1)
 
         button_container = tk.Frame(download_frame)
         button_container.grid(row=0, column=0)
+        runtime_buttons = ["Linux", "Windows", "NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64"]
+        for r_name in runtime_buttons:
+            tk.Button(button_container, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=3)
 
-        tk.Button(button_container, text="Linux", command=lambda: self.download_runtime("Linux")).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_container, text="Windows", command=lambda: self.download_runtime("Windows")).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_container, text="NES", command=lambda: self.download_runtime("NES")).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_container, text="SNES", command=lambda: self.download_runtime("SNES")).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_container, text="Sega Genesis/Mega Drive", command=lambda: self.download_runtime("Sega Genesis/Mega Drive")).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_container, text="Nintendo 64", command=lambda: self.download_runtime("Nintendo 64")).pack(side=tk.LEFT, padx=5)
-
-        # --- Main Action Buttons ---
         bottom_bar = tk.Frame(parent)
-        bottom_bar.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(10,0))
-        bottom_bar.columnconfigure(1, weight=1) # Push buttons to sides
+        bottom_bar.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=(10,0)); row_index += 1
+        bottom_bar.columnconfigure(1, weight=1)
+        bottom_bar.columnconfigure(2, weight=1)
 
         tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w")
         tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=1)
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=2, sticky="e")
+        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=2)
+        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=3, sticky="e")
 
     def browse_executable(self):
         filetypes = [
@@ -158,6 +204,14 @@ class KziGeneratorApp:
         if filepath:
             self.exec_path_var.set(filepath)
 
+    def browse_proton(self):
+        filepath = filedialog.askopenfilename(
+            title="Select Proton/Wine Executable",
+            initialdir=os.path.expanduser("~/.steam/root/compatibilitytools.d")
+        )
+        if filepath:
+            self.proton_path_var.set(filepath)
+
     def browse_icon(self):
         filepath = filedialog.askopenfilename(
             title="Select Icon File",
@@ -170,6 +224,54 @@ class KziGeneratorApp:
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
 
+    def test_cartridge(self):
+        exec_path = self.exec_path_var.get().strip()
+        params = self.params_var.get().strip()
+        runtime = self.runtime_var.get()
+        proton_path = self.proton_path_var.get().strip()
+        env = None
+
+        if not exec_path:
+            messagebox.showerror("Error", "Executable Path must be specified.")
+            return
+
+        work_dir = os.path.dirname(exec_path)
+
+        if is_steam_running():
+            messagebox.showwarning("Steam is Running", "Please close Steam before testing.")
+
+        command = []
+        if runtime == "windows":
+            if proton_path:
+                command.extend([proton_path, "run"])
+                env = os.environ.copy()
+                compat_path = os.path.join(work_dir, 'compatdata')
+                os.makedirs(compat_path, exist_ok=True)
+                env['STEAM_COMPAT_DATA_PATH'] = compat_path
+
+                steam_install_paths = [
+                    os.path.expanduser("~/.steam/steam"),
+                    os.path.expanduser("~/.steam/root"),
+                    os.path.expanduser("~/.local/share/Steam")
+                ]
+                steam_client_path = next((path for path in steam_install_paths if os.path.isdir(path)), None)
+
+                if steam_client_path:
+                    env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = steam_client_path
+                else:
+                    messagebox.showwarning("Steam Not Found", "Could not find Steam installation path. Proton may fail.")
+            else:
+                command.append("wine")
+        elif runtime not in ["none", "linux"]:
+            messagebox.showerror("Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
+            return
+
+        command.append(exec_path)
+        if params:
+            command.extend(shlex.split(params))
+
+        run_command_in_new_terminal(command, env=env, cwd=work_dir)
+
     def generate_kzi(self):
         game_name = self.game_name_var.get().strip()
         game_id = self.game_id_var.get().strip()
@@ -180,7 +282,7 @@ class KziGeneratorApp:
         runtime = self.runtime_var.get()
 
         if not all([game_name, game_id, exec_path]):
-            messagebox.showerror("Error", "Game Name, Game ID, and Executable Path are required.")
+            messagebox.showerror("Error", "Game Name, ID, and Executable Path are required.")
             return
 
         if ' ' in game_id:
@@ -199,18 +301,18 @@ class KziGeneratorApp:
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
-            relative_exec_path = os.path.relpath(exec_path, kzi_dir)
 
-            # Handle quotes and additional parameters
-            if ' ' in relative_exec_path and not relative_exec_path.startswith('"'):
-                relative_exec_path = f'"{relative_exec_path}"'
+            exec_command = os.path.relpath(exec_path, kzi_dir)
+            if ' ' in exec_command and not exec_command.startswith('"'):
+                exec_command = f'"{exec_command}"'
 
             if params:
-                relative_exec_path += f" {params}"
+                exec_command += f" {params}"
 
             relative_icon_path = os.path.relpath(icon_path, kzi_dir) if icon_path else ""
 
-            content = f"Name={game_name}\nId={game_id}\nExec={relative_exec_path}\n"
+            content = f"Name={game_name}\nId={game_id}\n"
+            content += f"Exec={exec_command}\n"
 
             if gamescope_options:
                 content += f"GameScopeOptions={gamescope_options}\n"
@@ -223,7 +325,7 @@ class KziGeneratorApp:
 
             messagebox.showinfo("Success", f"Successfully generated {os.path.basename(kzi_filepath)}")
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred while generating the file: {e}")
+            messagebox.showerror("Error", f"An error occurred: {e}")
 
     def load_kzi_file(self):
         kzi_filepath = filedialog.askopenfilename(
@@ -234,48 +336,40 @@ class KziGeneratorApp:
         if not kzi_filepath:
             return
 
-        # Clear existing fields
-        for var in [self.game_name_var, self.game_id_var, self.exec_path_var, self.params_var,
-                      self.icon_path_var, self.gamescope_var, self.runtime_var]:
+        # Clear all fields
+        for var in [self.game_name_var, self.game_id_var, self.exec_path_var,
+                      self.params_var, self.icon_path_var, self.gamescope_var, self.proton_path_var]:
             var.set("")
-        self.runtime_var.set("none") # Default runtime
+        self.runtime_var.set("none")
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
+
+            parsed_data = {}
             with open(kzi_filepath, 'r') as f:
                 for line in f:
-                    line = line.strip()
-                    if '=' not in line:
-                        continue
+                    if '=' in line:
+                        key, value = line.strip().split('=', 1)
+                        parsed_data[key.lower()] = value
 
-                    key, value = line.split('=', 1)
-                    key = key.lower()
+            self.game_name_var.set(parsed_data.get('name', ''))
+            self.game_id_var.set(parsed_data.get('id', ''))
+            self.gamescope_var.set(parsed_data.get('gamescopeoptions', ''))
+            self.runtime_var.set(parsed_data.get('runtime', 'none'))
 
-                    if key == 'name':
-                        self.game_name_var.set(value)
-                    elif key == 'id':
-                        self.game_id_var.set(value)
-                    elif key == 'exec':
-                        # Handle paths with quotes and params
-                        exec_full_path = ""
-                        params = ""
-                        # Regex to find quoted string or first word
-                        match = re.match(r'^(?:"([^"]+)"|([^\s]+))(?:\s+(.*))?$', value)
-                        if match:
-                            path_part = match.group(1) or match.group(2)
-                            params = match.group(3) or ""
-                            exec_full_path = os.path.abspath(os.path.join(kzi_dir, path_part))
+            if 'icon' in parsed_data:
+                icon_full_path = os.path.abspath(os.path.join(kzi_dir, parsed_data['icon']))
+                self.icon_path_var.set(icon_full_path)
 
-                        self.exec_path_var.set(exec_full_path)
-                        self.params_var.set(params)
-
-                    elif key == 'icon':
-                        icon_full_path = os.path.abspath(os.path.join(kzi_dir, value))
-                        self.icon_path_var.set(icon_full_path)
-                    elif key == 'gamescopeoptions':
-                        self.gamescope_var.set(value)
-                    elif key == 'runtime':
-                        self.runtime_var.set(value)
+            if 'exec' in parsed_data:
+                value = parsed_data['exec']
+                match = re.match(r'^(?:"([^"]+)"|([^\s]+))(?:\s+(.*))?$', value)
+                if match:
+                    path_part = match.group(1) or match.group(2)
+                    params = match.group(3) or ""
+                    exec_full_path = os.path.abspath(os.path.join(kzi_dir, path_part))
+                    self.exec_path_var.set(exec_full_path)
+                    self.params_var.set(params)
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load .kzi file: {e}")
