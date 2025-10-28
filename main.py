@@ -102,6 +102,7 @@ class KziGeneratorApp:
         self.icon_path_var = tk.StringVar()
         self.gamescope_var = tk.StringVar()
         self.proton_path_var = tk.StringVar()
+        self.dpad_fix_var = tk.BooleanVar(value=False) # Variable for the D-Pad fix checkbox
 
         self.game_name_var.trace_add("write", self._update_game_id)
 
@@ -112,8 +113,9 @@ class KziGeneratorApp:
 
     def _update_game_id(self, *args):
         game_name = self.game_name_var.get()
-        game_id = game_name.lower().replace(' ', '-')
-        self.game_id_var.set(game_id)
+        # Convert to lowercase, replace spaces with hyphens, filter invalid chars
+        sanitized_id = re.sub(r'[^a-z0-9-]', '', game_name.lower().replace(' ', '-'))
+        self.game_id_var.set(sanitized_id)
 
     def create_widgets(self, parent):
         parent.columnconfigure(1, weight=1)
@@ -165,6 +167,15 @@ class KziGeneratorApp:
         self.proton_path_entry = tk.Entry(proton_frame, textvariable=self.proton_path_var)
         self.proton_path_entry.grid(row=0, column=0, sticky="ew")
         tk.Button(proton_frame, text="Browse...", command=self.browse_proton).grid(row=0, column=1, padx=(5,0))
+
+        # D-Pad Fix Checkbox
+        self.dpad_fix_checkbox = tk.Checkbutton(
+            parent,
+            text="Enable D-Pad reversal fix for native Linux games (Kazeta+ only)",
+            variable=self.dpad_fix_var
+        )
+        self.dpad_fix_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
+
 
         download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=10)
         download_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=10); row_index += 1
@@ -280,14 +291,26 @@ class KziGeneratorApp:
         icon_path = self.icon_path_var.get().strip()
         gamescope_options = self.gamescope_var.get().strip()
         runtime = self.runtime_var.get()
+        apply_dpad_fix = self.dpad_fix_var.get()
 
         if not all([game_name, game_id, exec_path]):
             messagebox.showerror("Error", "Game Name, ID, and Executable Path are required.")
             return
 
-        if ' ' in game_id:
-            messagebox.showerror("Invalid ID", "The 'Game ID' field cannot contain spaces.")
-            return
+        if not re.match(r'^[a-z0-9-]+$', game_id):
+             messagebox.showerror("Invalid ID", "The 'Game ID' field can only contain lowercase letters, numbers, and hyphens.")
+             return
+
+        if apply_dpad_fix and runtime not in ["none", "linux"]:
+            proceed = messagebox.askyesno(
+                "Confirm D-Pad Fix",
+                "The D-Pad reversal fix is usually only needed for native Linux games.\n"
+                f"Your selected runtime is '{runtime}'.\n\n"
+                "Do you still want to include the fix in the .kzi file?",
+                icon='warning'
+            )
+            if not proceed:
+                return
 
         kzi_filepath = filedialog.asksaveasfilename(
             defaultextension=".kzi",
@@ -320,6 +343,11 @@ class KziGeneratorApp:
                 content += f"Icon={relative_icon_path}\n"
             content += f"Runtime={runtime}\n"
 
+            # Add D-Pad fix lines if checked
+            if apply_dpad_fix:
+                content += "PreExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/steam-deck-dpad-fix.yaml\n"
+                content += "PostExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/steam-deck.yaml\n"
+
             with open(kzi_filepath, "w") as f:
                 f.write(content)
 
@@ -341,6 +369,7 @@ class KziGeneratorApp:
                       self.params_var, self.icon_path_var, self.gamescope_var, self.proton_path_var]:
             var.set("")
         self.runtime_var.set("none")
+        self.dpad_fix_var.set(False) # Reset checkbox
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
@@ -370,6 +399,11 @@ class KziGeneratorApp:
                     exec_full_path = os.path.abspath(os.path.join(kzi_dir, path_part))
                     self.exec_path_var.set(exec_full_path)
                     self.params_var.set(params)
+
+            # Check if D-Pad fix lines exist
+            if 'preexec' in parsed_data and 'postexec' in parsed_data:
+                 if "steam-deck-dpad-fix" in parsed_data['preexec']:
+                      self.dpad_fix_var.set(True)
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load .kzi file: {e}")
@@ -434,4 +468,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = KziGeneratorApp(root)
     root.mainloop()
-
