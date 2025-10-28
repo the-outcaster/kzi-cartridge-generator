@@ -5,37 +5,31 @@ Simple Python GUI application for creating and editing `.kzi` (Kazeta informatio
 
 ## Features
 
-**Graphical Interface:** Easily create and edit `.kzi` files without manual text editing.
-
-**Load Existing Files:** Open and parse existing `.kzi` files to quickly modify them.
-
-**Auto-Generating ID:** The Game ID is automatically generated from the Game Name as you type.
-
-**Parameter Support:** Add optional launch parameters for executables and GameScope options.
-
-**Icon Fetching:** Automatically search for and download 64x64 game icons from [SteamGridDB](https://www.steamgriddb.com/).
-
-**Runtime Downloader:** Download official Kazeta runtimes for various platforms directly within the app.
-
-**Smart Path Handling:** Automatically creates relative paths and adds quotes to executable paths containing spaces.
-
-**D-Pad reversal fix for native Linux games**: note this is a Kazeta+-only feature for now.
+- graphical interface: Easily create and edit `.kzi` files without manual text editing.
+- load existing files: Open and parse existing `.kzi` files to quickly modify them.
+- auto-generating ID: The Game ID is automatically generated from the Game Name as you type.
+- parameter support: Add optional launch parameters for executables and GameScope options.
+- icon fetching: Automatically search for and download 64x64 game icons from [SteamGridDB](https://www.steamgriddb.com/).
+- runtime downloader: Download official Kazeta runtimes for various platforms directly within the app.
+- smart path handling: Automatically creates relative paths and adds quotes to executable paths containing spaces.
+- `.kzi` file preview
+- D-pad reversal fix for native Linux games: note **this is a Kazeta+-only feature for now.**
 
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Usage
 Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridge-generator/releases) page, download the latest AppImage, and execute it. Note that you may have to mark it as executable in order to run it.
 
-SteamGridDB API Key: The first time you use the "Fetch from SteamGridDB" feature, you will be prompted to enter your API key. This key will be saved to `~/.config/kzi-cartridge-generator/config.json` for future use.
+If you want to fetch icons from SteamGridDB: the first time you use this feature, you will be prompted to enter your API key. This key will be saved to `~/.config/kzi-cartridge-generator/config.json` for future use.
 
 Fill out the fields:
-- Game Name: The display name of your game.
-- Game ID: Automatically generated from the game name.
-- Executable Path: The path to the game's main executable or ROM file.
-- Additional Parameters: (Optional) Any command-line arguments to pass to the executable.
-- Icon Path: The path to the game's 64x64 pixel icon.
-- GameScope Options: (Optional) Parameters to pass to GameScope.
-- Runtime: Select the appropriate Kazeta runtime for the game.
+- game name: The display name of your game.
+- game ID: Automatically generated from the game name.
+- executable path: The path to the game's main executable or ROM file.
+- additional parameters (optional): Any command-line arguments to pass to the executable.
+- icon path: The path to the game's 64x64 pixel icon.
+- gamescope options (optional) : Parameters to pass to [GameScope](https://github.com/kazetaos/kazeta/wiki/Gamescope-Options).
+- runtime: Select the appropriate Kazeta runtime for the game.
 
 When finished, generate the `.kzi` file by clicking "Generate .kzi File". The file will be saved with a name corresponding to the Game ID.
 
