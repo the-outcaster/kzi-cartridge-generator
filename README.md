@@ -19,6 +19,8 @@ Simple Python GUI application for creating and editing `.kzi` (Kazeta informatio
 
 **Smart Path Handling:** Automatically creates relative paths and adds quotes to executable paths containing spaces.
 
+**D-Pad reversal fix for native Linux games**: note this is a Kazeta+-only feature for now.
+
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Usage
