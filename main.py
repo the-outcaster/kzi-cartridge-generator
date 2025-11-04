@@ -2,7 +2,7 @@
 # KZI File Generator - A GUI for creating .kzi cartridge files for Kazeta
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext # Added scrolledtext for the preview box
+from tkinter import filedialog, messagebox, scrolledtext # Added scrolledtext
 import threading
 import os
 import getpass
@@ -27,7 +27,13 @@ def get_default_media_path():
     for path in possible_paths:
         if os.path.isdir(path):
             return path
-    return os.path.expanduser("~")
+    # Fallback to home dir if no media path found
+    home_dir = os.path.expanduser("~")
+    # Also check for user's media dirs inside home, just in case
+    for path in [os.path.join(home_dir, "media"), os.path.join(home_dir, "run/media")]:
+        if os.path.isdir(path):
+            return path
+    return home_dir
 
 def is_steam_running():
     """Checks if a Steam process is currently running using pgrep."""
@@ -103,6 +109,7 @@ class KziGeneratorApp:
         self.gamescope_var = tk.StringVar()
         self.proton_path_var = tk.StringVar()
         self.dpad_fix_var = tk.BooleanVar(value=False)
+        self.default_game_var = tk.BooleanVar(value=False) # New var for default game
 
         # Traces for live preview update
         self.game_name_var.trace_add("write", self._update_game_id)
@@ -112,10 +119,11 @@ class KziGeneratorApp:
         self.icon_path_var.trace_add("write", self._update_preview_trace)
         self.gamescope_var.trace_add("write", self._update_preview_trace)
         self.dpad_fix_var.trace_add("write", self._update_preview_trace)
+        self.default_game_var.trace_add("write", self._update_preview_trace) # Trace for new checkbox
 
         runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
         self.runtime_var = tk.StringVar(value=runtime_options[0])
-        self.runtime_var.trace_add("write", self._update_preview_trace) # Trace runtime changes
+        self.runtime_var.trace_add("write", self._update_preview_trace)
 
 
         self.create_widgets(main_frame)
@@ -136,10 +144,8 @@ class KziGeneratorApp:
         if not absolute_path:
             return ""
         try:
-            # Attempt to find common media path structure
             media_path_base = get_default_media_path()
             if absolute_path.startswith(media_path_base):
-                 # Find the part after the username-specific media folder
                  path_parts = absolute_path.split(os.sep)
                  username_index = -1
                  for i, part in enumerate(path_parts):
@@ -147,15 +153,12 @@ class KziGeneratorApp:
                          username_index = i
                          break
                  if username_index != -1 and username_index + 1 < len(path_parts):
-                      # Assume the next part is the card name, and everything after is relative
                       card_name_index = username_index + 1
                       if card_name_index + 1 < len(path_parts):
                            relative_part = os.path.join(*path_parts[card_name_index + 1:])
                            return relative_part
-            # Fallback: Use the last two components (directory + filename)
             return os.path.join(os.path.basename(os.path.dirname(absolute_path)), os.path.basename(absolute_path))
         except Exception:
-            # Safest fallback: just the filename
             return os.path.basename(absolute_path)
 
 
@@ -169,60 +172,62 @@ class KziGeneratorApp:
         gamescope_options = self.gamescope_var.get().strip()
         runtime = self.runtime_var.get()
         apply_dpad_fix = self.dpad_fix_var.get()
+        set_as_default = self.default_game_var.get()
 
-        content = f"Name={game_name}\nId={game_id}\n"
+        media_path_base = get_default_media_path()
+        base_dir = kzi_save_dir if kzi_save_dir else media_path_base
+
+        content_lines = []
+        content_lines.append(f"Name={game_name}")
+        content_lines.append(f"Id={game_id}")
 
         exec_command = ""
         if exec_path:
-             if for_preview:
-                  exec_command = self._get_preview_relative_path(exec_path)
-             elif kzi_save_dir:
-                  try:
-                       exec_command = os.path.relpath(exec_path, kzi_save_dir)
-                  except ValueError: # Handle paths on different drives
-                       exec_command = exec_path # Use absolute path as fallback
-             else: # Should not happen during generation, but handle defensively
-                  exec_command = exec_path
+            if exec_path.startswith(media_path_base):
+                try:
+                    exec_command = os.path.relpath(exec_path, base_dir)
+                except ValueError:
+                    exec_command = exec_path
 
-             # Apply quoting logic for spaces ONLY to the path part
-             path_part = exec_command
-             params_part = params
-             if ' ' in path_part and not path_part.startswith('"'):
-                  path_part = f'"{path_part}"'
+                if ' ' in exec_command and not exec_command.startswith('"'):
+                    exec_command = f'"{exec_command}"'
+            else:
+                if os.path.isfile(exec_path) or os.path.isabs(exec_path):
+                     exec_command = os.path.basename(exec_path)
+                else:
+                     exec_command = exec_path
 
-             if params_part:
-                  exec_command = f"{path_part} {params_part}"
-             else:
-                  exec_command = path_part
+            if params:
+                exec_command += f" {params}"
 
-        content += f"Exec={exec_command}\n"
-
-
-        if gamescope_options:
-            content += f"GameScopeOptions={gamescope_options}\n"
+        content_lines.append(f"Exec={exec_command}")
 
         relative_icon_path = ""
         if icon_path:
-             if for_preview:
-                 relative_icon_path = self._get_preview_relative_path(icon_path)
-             elif kzi_save_dir:
-                 try:
-                     relative_icon_path = os.path.relpath(icon_path, kzi_save_dir)
-                 except ValueError:
-                     relative_icon_path = icon_path # Fallback to absolute
-             else:
+             try:
+                 relative_icon_path = os.path.relpath(icon_path, base_dir)
+             except ValueError:
                  relative_icon_path = icon_path
+             content_lines.append(f"Icon={relative_icon_path}")
 
-             content += f"Icon={relative_icon_path}\n"
+        # Re-ordered GamescopeOptions to be after Icon
+        if gamescope_options:
+            content_lines.append(f"GamescopeOptions={gamescope_options}") # Corrected capitalization
 
-
-        content += f"Runtime={runtime}\n"
+        if runtime != "none":
+            content_lines.append(f"Runtime={runtime}")
 
         if apply_dpad_fix:
-            content += "PreExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/steam-deck-dpad-fix.yaml\n"
-            content += "PostExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/steam-deck.yaml\n"
+            # Updated paths for D-Pad fix
+            content_lines.append("PreExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/dpad-fix.yaml")
+            content_lines.append("PostExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/default.yaml")
 
-        return content
+        # Add default game flag if checked
+        if set_as_default:
+            content_lines.append("SetAsDefaultGame=true")
+
+        return "\n".join(content_lines) + "\n"
+
 
     def _update_preview(self):
         """Updates the content of the preview text box."""
@@ -291,6 +296,16 @@ class KziGeneratorApp:
         )
         self.dpad_fix_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
 
+        # New "Set as default game" checkbox
+        self.default_game_checkbox = tk.Checkbutton(
+            parent,
+            text="Set as the default game (for multi-carts, Kazeta+ only)",
+            variable=self.default_game_var,
+            command=self._update_preview
+        )
+        self.default_game_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
+
+
         download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=10)
         download_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=10); row_index += 1
         download_frame.columnconfigure(0, weight=1)
@@ -301,27 +316,26 @@ class KziGeneratorApp:
         for r_name in runtime_buttons:
             tk.Button(button_container, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=3)
 
-        # KZI File Preview Box - Increased height
+        # KZI File Preview Box
         preview_frame = tk.LabelFrame(parent, text="KZI File Preview", padx=10, pady=5)
         preview_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=5); row_index += 1
-        self.preview_text = scrolledtext.ScrolledText(preview_frame, height=10, wrap=tk.WORD, state=tk.DISABLED) # Increased height
+        self.preview_text = scrolledtext.ScrolledText(preview_frame, height=10, wrap=tk.WORD, state=tk.DISABLED)
         self.preview_text.pack(fill=tk.BOTH, expand=True)
 
         bottom_bar = tk.Frame(parent)
         bottom_bar.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=(10,0)); row_index += 1
-        bottom_bar.columnconfigure(1, weight=1) # Spacer column
-        bottom_bar.columnconfigure(3, weight=1) # Spacer column
+        bottom_bar.columnconfigure(1, weight=1)
+        bottom_bar.columnconfigure(3, weight=1)
 
-        # Button rearrangement
         tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w", padx=(0, 5))
-        tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1, sticky="w") # New button
+        tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1, sticky="w")
         tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=2)
-        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=3, sticky="e", padx=(5, 5)) # Moved closer
+        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=3, sticky="e", padx=(5, 5))
         tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=4, sticky="e")
 
     def browse_executable(self):
         filetypes = [
-            ("All files", "*.*"),
+            ("All files", "*"),
             ("Windows Executables", "*.exe"),
             ("Linux Executables", "*.x86_64 *.sh *.AppImage"),
             ("NES ROMs", "*.nes"),
@@ -399,9 +413,15 @@ class KziGeneratorApp:
             messagebox.showerror("Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
             return
 
-        command.append(exec_path)
+        full_command_string = exec_path
         if params:
-            command.extend(shlex.split(params))
+            full_command_string += f" {params}"
+
+        try:
+            command.extend(shlex.split(full_command_string))
+        except ValueError as e:
+            messagebox.showerror("Parameter Error", f"Error parsing command arguments: {e}")
+            return
 
         run_command_in_new_terminal(command, env=env, cwd=work_dir)
 
@@ -410,6 +430,7 @@ class KziGeneratorApp:
         exec_path = self.exec_path_var.get().strip()
         runtime = self.runtime_var.get()
         apply_dpad_fix = self.dpad_fix_var.get()
+        media_path_base = get_default_media_path()
 
         if not all([self.game_name_var.get().strip(), game_id, exec_path]):
              messagebox.showerror("Error", "Game Name, ID, and Executable Path are required.")
@@ -433,7 +454,7 @@ class KziGeneratorApp:
         kzi_filepath = filedialog.asksaveasfilename(
             defaultextension=".kzi",
             filetypes=[("Kazeta Info files", "*.kzi")],
-            initialdir=get_default_media_path(),
+            initialdir=media_path_base,
             initialfile=f"{game_id}.kzi",
             title="Save .kzi File"
         )
@@ -442,7 +463,6 @@ class KziGeneratorApp:
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
-            # Use the directory where the KZI file is being saved as the base for relpath
             content = self._get_kzi_content(for_preview=False, kzi_save_dir=kzi_dir)
 
             with open(kzi_filepath, "w") as f:
@@ -461,7 +481,7 @@ class KziGeneratorApp:
         if not kzi_filepath:
             return
 
-        self.unload_cartridge() # Clear fields before loading
+        self.unload_cartridge()
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
@@ -474,7 +494,7 @@ class KziGeneratorApp:
                         parsed_data[key.lower()] = value
 
             self.game_name_var.set(parsed_data.get('name', ''))
-            self.game_id_var.set(parsed_data.get('id', '')) # ID update will trigger preview
+            self.game_id_var.set(parsed_data.get('id', ''))
             self.gamescope_var.set(parsed_data.get('gamescopeoptions', ''))
             self.runtime_var.set(parsed_data.get('runtime', 'none'))
 
@@ -484,23 +504,30 @@ class KziGeneratorApp:
 
             if 'exec' in parsed_data and parsed_data['exec']:
                 value = parsed_data['exec']
-                # Updated regex to handle quoted paths potentially anywhere
                 match = re.match(r'^(?:"([^"]+)"|([^\s]+))(?:\s+(.*))?$', value)
                 if match:
                     path_part = match.group(1) or match.group(2)
                     params = match.group(3) or ""
-                    # Ensure path_part exists before trying to join
-                    if path_part:
-                         exec_full_path = os.path.abspath(os.path.join(kzi_dir, path_part))
-                         self.exec_path_var.set(exec_full_path)
-                         self.params_var.set(params)
 
+                    potential_path = os.path.abspath(os.path.join(kzi_dir, path_part))
+
+                    if os.path.exists(potential_path):
+                        self.exec_path_var.set(potential_path)
+                    elif shutil.which(path_part):
+                        self.exec_path_var.set(path_part)
+                    else:
+                        self.exec_path_var.set(path_part)
+
+                    self.params_var.set(params)
 
             if 'preexec' in parsed_data and 'postexec' in parsed_data:
-                 if "steam-deck-dpad-fix" in parsed_data['preexec']:
+                 if "dpad-fix" in parsed_data['preexec']: # Updated check
                       self.dpad_fix_var.set(True)
 
-            self._update_preview() # Ensure preview updates after all loading
+            if parsed_data.get('setasdefaultgame') == 'true':
+                self.default_game_var.set(True)
+
+            self._update_preview()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load .kzi file: {e}")
@@ -512,6 +539,7 @@ class KziGeneratorApp:
             var.set("")
         self.runtime_var.set("none")
         self.dpad_fix_var.set(False)
+        self.default_game_var.set(False) # Clear new checkbox
         self._update_preview() # Clear preview too
 
 
