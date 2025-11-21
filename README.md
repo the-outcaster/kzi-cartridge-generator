@@ -15,8 +15,14 @@ Simple Python GUI application for creating and editing `.kzi` (Kazeta informatio
 - `.kzi` file preview
 - test Linux/Windows-based cartridges before export
 - D-pad reversal fix for native Linux games: note **this is a Kazeta+-only feature for now.**
+- game and audio CD/DVD burning
 
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
+
+## Requirements
+- `python3.13` (you may run into issues with certain features if you use Python 3.14 or later)
+- `genisoimage`
+- `wodim`
 
 ## Usage
 Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridge-generator/releases) page, download the latest AppImage, and execute it. Note that you may have to mark it as executable in order to run it.
