@@ -15,7 +15,9 @@ import shutil
 # Import from our other modules
 from steamgriddb_api import handle_fetch_icon_flow
 from about_window import show_about_window
+from iso_burner import IsoBurnerWindow
 import urllib.request
+
 # Import the shared SSL context
 from steamgriddb_api import ssl_context
 
@@ -48,8 +50,12 @@ def run_command_in_new_terminal(command_list, env=None, cwd=None):
     Tries to run a command in a new terminal window, with an optional environment and working directory.
     The window will remain open after the command finishes.
     """
+    if len(command_list) == 1 and ' ' in command_list[0]:
+         command_string = command_list[0]
+    else:
+         command_string = shlex.join(command_list)
+
     cd_command = f'cd {shlex.quote(cwd)} && ' if cwd else ''
-    command_string = shlex.join(command_list)
 
     wrapper_script = (
         f'{cd_command}{command_string};'
@@ -93,11 +99,14 @@ class KziGeneratorApp:
 
         self.runtime_urls = {
             "Linux": "https://runtimes.kazeta.org/linux-1.0.kzr",
+            "Linux 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/linux-1.1.kzr",
             "Windows": "https://runtimes.kazeta.org/windows-1.0.kzr",
+            "Windows 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.1.kzr",
             "NES": "https://runtimes.kazeta.org/nes-1.0.kzr",
             "SNES": "https://runtimes.kazeta.org/snes-1.0.kzr",
             "Sega Genesis/Mega Drive": "https://runtimes.kazeta.org/megadrive-1.1.kzr",
             "Nintendo 64": "https://runtimes.kazeta.org/nintendo64-1.0.kzr",
+            "GameCube/Wii": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/dolphin-1.0.kzr",
         }
 
         # --- Variable setup ---
@@ -109,7 +118,7 @@ class KziGeneratorApp:
         self.gamescope_var = tk.StringVar()
         self.proton_path_var = tk.StringVar()
         self.dpad_fix_var = tk.BooleanVar(value=False)
-        self.default_game_var = tk.BooleanVar(value=False) # New var for default game
+        self.default_game_var = tk.BooleanVar(value=False)
 
         # Traces for live preview update
         self.game_name_var.trace_add("write", self._update_game_id)
@@ -119,9 +128,9 @@ class KziGeneratorApp:
         self.icon_path_var.trace_add("write", self._update_preview_trace)
         self.gamescope_var.trace_add("write", self._update_preview_trace)
         self.dpad_fix_var.trace_add("write", self._update_preview_trace)
-        self.default_game_var.trace_add("write", self._update_preview_trace) # Trace for new checkbox
+        self.default_game_var.trace_add("write", self._update_preview_trace)
 
-        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
+        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
         self.runtime_var = tk.StringVar(value=runtime_options[0])
         self.runtime_var.trace_add("write", self._update_preview_trace)
 
@@ -172,7 +181,7 @@ class KziGeneratorApp:
         gamescope_options = self.gamescope_var.get().strip()
         runtime = self.runtime_var.get()
         apply_dpad_fix = self.dpad_fix_var.get()
-        set_as_default = self.default_game_var.get()
+        set_default = self.default_game_var.get()
 
         media_path_base = get_default_media_path()
         base_dir = kzi_save_dir if kzi_save_dir else media_path_base
@@ -183,7 +192,7 @@ class KziGeneratorApp:
 
         exec_command = ""
         if exec_path:
-            if exec_path.startswith(media_path_base):
+            if exec_path.startswith(media_path_base) or (kzi_save_dir and exec_path.startswith(kzi_save_dir)):
                 try:
                     exec_command = os.path.relpath(exec_path, base_dir)
                 except ValueError:
@@ -210,20 +219,17 @@ class KziGeneratorApp:
                  relative_icon_path = icon_path
              content_lines.append(f"Icon={relative_icon_path}")
 
-        # Re-ordered GamescopeOptions to be after Icon
         if gamescope_options:
-            content_lines.append(f"GamescopeOptions={gamescope_options}") # Corrected capitalization
+            content_lines.append(f"GamescopeOptions={gamescope_options}")
 
         if runtime != "none":
             content_lines.append(f"Runtime={runtime}")
 
         if apply_dpad_fix:
-            # Updated paths for D-Pad fix
             content_lines.append("PreExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/dpad-fix.yaml")
             content_lines.append("PostExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/default.yaml")
 
-        # Add default game flag if checked
-        if set_as_default:
+        if set_default:
             content_lines.append("SetAsDefaultGame=true")
 
         return "\n".join(content_lines) + "\n"
@@ -276,7 +282,7 @@ class KziGeneratorApp:
         self.gamescope_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
         tk.Label(parent, text="Runtime:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        runtime_options = ["none", "linux", "windows", "nes", "snes", "megadrive", "nintendo64"]
+        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
         self.runtime_menu = tk.OptionMenu(parent, self.runtime_var, *runtime_options)
         self.runtime_menu.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
@@ -296,7 +302,6 @@ class KziGeneratorApp:
         )
         self.dpad_fix_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
 
-        # New "Set as default game" checkbox
         self.default_game_checkbox = tk.Checkbutton(
             parent,
             text="Set as the default game (for multi-carts, Kazeta+ only)",
@@ -312,7 +317,7 @@ class KziGeneratorApp:
 
         button_container = tk.Frame(download_frame)
         button_container.grid(row=0, column=0)
-        runtime_buttons = ["Linux", "Windows", "NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64"]
+        runtime_buttons = ["Linux", "Linux 1.1", "Windows", "Windows 1.1", "NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
         for r_name in runtime_buttons:
             tk.Button(button_container, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=3)
 
@@ -325,13 +330,14 @@ class KziGeneratorApp:
         bottom_bar = tk.Frame(parent)
         bottom_bar.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=(10,0)); row_index += 1
         bottom_bar.columnconfigure(1, weight=1)
-        bottom_bar.columnconfigure(3, weight=1)
+        bottom_bar.columnconfigure(4, weight=1)
 
         tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w", padx=(0, 5))
         tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1, sticky="w")
         tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=2)
-        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=3, sticky="e", padx=(5, 5))
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=4, sticky="e")
+        tk.Button(bottom_bar, text="Create CD/DVD...", command=self.open_iso_burner).grid(row=0, column=3, padx=5)
+        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=4, sticky="e", padx=(5, 5))
+        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=5, sticky="e")
 
     def browse_executable(self):
         filetypes = [
@@ -342,6 +348,7 @@ class KziGeneratorApp:
             ("SNES ROMs", "*.sfc"),
             ("Nintendo 64 ROMs", "*.n64 *.z64"),
             ("Sega Genesis/Mega Drive ROMs", "*.bin"),
+            ("GameCube/Wii ROMs", "*.iso *.gcm *.wbfs *.rvz"),
         ]
         filepath = filedialog.askopenfilename(
             title="Select Executable File",
@@ -370,6 +377,11 @@ class KziGeneratorApp:
 
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
+
+    def open_iso_burner(self):
+        # Pass self._get_kzi_content so the burner window can generate
+        # the KZI file content based on the main window's current state.
+        IsoBurnerWindow(self.root)
 
     def test_cartridge(self):
         exec_path = self.exec_path_var.get().strip()
@@ -418,10 +430,10 @@ class KziGeneratorApp:
             full_command_string += f" {params}"
 
         try:
-            command.extend(shlex.split(full_command_string))
+             command.extend(shlex.split(full_command_string))
         except ValueError as e:
-            messagebox.showerror("Parameter Error", f"Error parsing command arguments: {e}")
-            return
+             messagebox.showerror("Parsing Error", f"Error parsing executable or parameters:\n{e}")
+             return
 
         run_command_in_new_terminal(command, env=env, cwd=work_dir)
 
@@ -440,7 +452,7 @@ class KziGeneratorApp:
              messagebox.showerror("Invalid ID", "The 'Game ID' field can only contain lowercase letters, numbers, and hyphens.")
              return
 
-        if apply_dpad_fix and runtime not in ["none", "linux"]:
+        if apply_dpad_fix and runtime not in ["none", "linux", "linux-1.1"]:
             proceed = messagebox.askyesno(
                 "Confirm D-Pad Fix",
                 "The D-Pad reversal fix is usually only needed for native Linux games.\n"
@@ -521,11 +533,12 @@ class KziGeneratorApp:
                     self.params_var.set(params)
 
             if 'preexec' in parsed_data and 'postexec' in parsed_data:
-                 if "dpad-fix" in parsed_data['preexec']: # Updated check
+                 if "dpad-fix" in parsed_data['preexec']:
                       self.dpad_fix_var.set(True)
 
-            if parsed_data.get('setasdefaultgame') == 'true':
-                self.default_game_var.set(True)
+            if 'setasdefaultgame' in parsed_data:
+                self.default_game_var.set(parsed_data['setasdefaultgame'].lower() == 'true')
+
 
             self._update_preview()
 
@@ -539,7 +552,7 @@ class KziGeneratorApp:
             var.set("")
         self.runtime_var.set("none")
         self.dpad_fix_var.set(False)
-        self.default_game_var.set(False) # Clear new checkbox
+        self.default_game_var.set(False)
         self._update_preview() # Clear preview too
 
 
@@ -596,7 +609,6 @@ class KziGeneratorApp:
         except Exception as e:
             progress_window.destroy()
             messagebox.showerror("Download Failed", f"An error occurred: {e}")
-
 
 if __name__ == "__main__":
     root = tk.Tk()
