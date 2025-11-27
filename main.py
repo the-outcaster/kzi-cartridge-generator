@@ -2,7 +2,7 @@
 # KZI File Generator - A GUI for creating .kzi cartridge files for Kazeta
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext # Added scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext
 import threading
 import os
 import getpass
@@ -11,15 +11,14 @@ import re
 import subprocess
 import shlex
 import shutil
-
-# Import from our other modules
-from steamgriddb_api import handle_fetch_icon_flow
-from about_window import show_about_window
-from iso_burner import IsoBurnerWindow
 import urllib.request
 
-# Import the shared SSL context
-from steamgriddb_api import ssl_context
+# Import from our other modules
+from about_window import show_about_window
+from erofs_manager import ErofsManagerWindow
+from iso_burner import IsoBurnerWindow
+from steamgriddb_api import handle_fetch_icon_flow
+from steamgriddb_api import ssl_context # Import the shared SSL context
 
 
 def get_default_media_path():
@@ -335,9 +334,10 @@ class KziGeneratorApp:
         tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w", padx=(0, 5))
         tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1, sticky="w")
         tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=2)
-        tk.Button(bottom_bar, text="Create CD/DVD...", command=self.open_iso_burner).grid(row=0, column=3, padx=5)
-        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=4, sticky="e", padx=(5, 5))
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=5, sticky="e")
+        tk.Button(bottom_bar, text="Create Runtime/Package...", command=self.open_erofs_manager).grid(row=0, column=3, padx=5)
+        tk.Button(bottom_bar, text="Create CD/DVD...", command=self.open_iso_burner).grid(row=0, column=4, padx=5)
+        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=5, sticky="e", padx=(5, 5))
+        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=6, sticky="e")
 
     def browse_executable(self):
         filetypes = [
@@ -377,6 +377,9 @@ class KziGeneratorApp:
 
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
+
+    def open_erofs_manager(self):
+        ErofsManagerWindow(self.root)
 
     def open_iso_burner(self):
         # Pass self._get_kzi_content so the burner window can generate

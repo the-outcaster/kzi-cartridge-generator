@@ -20,9 +20,12 @@ Simple Python GUI application for creating and editing `.kzi` (Kazeta informatio
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Requirements
-- `python3.13` (you may run into issues with certain features if you use Python 3.14 or later)
+- `python3.x` (you may run into issues with certain features if you use Python 3.14 or later)
 - `genisoimage`
 - `wodim`
+- `erofs-utils`
+- `erofsfuse`
+- `pkexec`
 
 ## Usage
 Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridge-generator/releases) page, download the latest AppImage, and execute it. Note that you may have to mark it as executable in order to run it.
