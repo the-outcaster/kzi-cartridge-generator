@@ -6,7 +6,7 @@ from tkinter import ttk
 import webbrowser
 from tkinter import font as tkFont
 
-version = "1.8"
+version = "1.9"
 copyright_year = "2025"
 source_code_link = "https://github.com/the-outcaster/kzi-cartridge-generator"
 kazeta_home_link = "https://kazeta.org/"
