@@ -26,6 +26,7 @@ class ErofsManagerWindow:
         self.image_type_var = tk.StringVar(value="kzr") # kzr or kzp
 
         self.comp_algo_var = tk.StringVar(value="lz4")
+        self.single_thread_var = tk.BooleanVar(value=False)
 
         self.mount_image_path_var = tk.StringVar()
         self.mount_point_var = tk.StringVar(value=os.path.expanduser("~/mnt"))
@@ -71,16 +72,22 @@ class ErofsManagerWindow:
         type_frame = ttk.LabelFrame(self.tab_create, text="2. Package Type", padding=10)
         type_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Radiobutton(type_frame, text="Kazeta Runtime (.kzr)", variable=self.image_type_var, value="kzr").pack(anchor="w")
-        ttk.Radiobutton(type_frame, text="Kazeta Game Package (.kzp) - Must contain .kzi file", variable=self.image_type_var, value="kzp").pack(anchor="w")
+        ttk.Radiobutton(type_frame, text="Runtime (.kzr) - Generic folders", variable=self.image_type_var, value="kzr").pack(anchor="w")
+        ttk.Radiobutton(type_frame, text="Game Package (.kzp) - Must contain .kzi file", variable=self.image_type_var, value="kzp").pack(anchor="w")
 
         # Compression Options
         comp_frame = ttk.LabelFrame(self.tab_create, text="3. Compression Settings", padding=10)
         comp_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(comp_frame, text="Algorithm:").grid(row=0, column=0, sticky="w", padx=5)
+        # IMPORTANT: We use .pack() for all items here. Do not use .grid()!
+        ttk.Label(comp_frame, text="Algorithm:").pack(side=tk.LEFT, padx=(0, 5))
+
         algos = ['lz4', 'lz4hc', 'lzma', 'deflate', 'libdeflate', 'zstd', 'uncompressed']
-        ttk.OptionMenu(comp_frame, self.comp_algo_var, algos[0], *algos).grid(row=0, column=1, sticky="w", padx=5)
+        ttk.OptionMenu(comp_frame, self.comp_algo_var, algos[0], *algos).pack(side=tk.LEFT)
+
+        # The Checkbutton
+        ttk.Checkbutton(comp_frame, text="Single Thread Mode (taskset -c 0)",
+                        variable=self.single_thread_var).pack(side=tk.LEFT, padx=(15, 0))
 
         # Action
         self.create_btn = ttk.Button(self.tab_create, text="Create EROFS Image", command=self.start_creation)
@@ -180,23 +187,33 @@ class ErofsManagerWindow:
                 raise Exception("mkfs.erofs not found. Please install erofs-utils.")
 
             algo = self.comp_algo_var.get()
-            # Hardcoded default for algorithms that support levels
-            default_level = "9"
 
-            cmd = [mkfs]
+            # 1. Build the base mkfs command
+            base_cmd = [mkfs]
 
-            if algo == "uncompressed":
-                pass
-            elif algo in ["lz4", "lzma"]:
-                # These do not accept a level argument
-                cmd.append(f"-z{algo}")
-            else:
-                # lz4hc, deflate, etc. accept a level. We use 9 by default.
-                cmd.append(f"-z{algo},{default_level}")
+            # Simplified Logic:
+            # - If uncompressed, we pass nothing (mkfs.erofs defaults to lz4 usually,
+            #   but we assume the user might use -C0 or similar if they really wanted raw
+            #   uncompressed, but omitting -z is the standard approach).
+            # - For ANY other algo (lz4, lz4hc, lzma, deflate, etc), we just pass -z<algo>.
+            #   mkfs.erofs will automatically apply the default (usually max) compression level.
+            if algo != "uncompressed":
+                base_cmd.append(f"-z{algo}")
 
-            cmd.extend([save_path, source])
+            base_cmd.extend([save_path, source])
 
-            process = subprocess.run(cmd, capture_output=True, text=True)
+            # 2. Handle Single Thread Mode
+            final_cmd = base_cmd
+            if self.single_thread_var.get():
+                taskset = shutil.which("taskset")
+                if not taskset:
+                    raise Exception("taskset command not found (required for single thread mode).")
+
+                # Prepend taskset -c 0
+                final_cmd = [taskset, "-c", "0"] + base_cmd
+
+            # 3. Run
+            process = subprocess.run(final_cmd, capture_output=True, text=True)
 
             if process.returncode != 0:
                 raise Exception(f"mkfs.erofs failed:\n{process.stderr}")
