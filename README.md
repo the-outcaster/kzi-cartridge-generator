@@ -1,10 +1,9 @@
 # Kazeta Cartridge Generator
 Simple Python GUI application for creating and editing `.kzi` (Kazeta information) files for [Kazeta](https://kazeta.org)/[Kazeta+](https://github.com/the-outcaster/kazeta-plus).
 
-![Kazeta Cartridge Generator screenshot](https://i.imgur.com/mNnOkjf.png)
+<img width="1111" height="874" alt="Screenshot_20251127_195537" src="https://github.com/user-attachments/assets/55a44902-2bf9-42f2-aad4-7c449441c847" />
 
 ## Features
-
 - graphical interface: Easily create and edit `.kzi` files without manual text editing.
 - load existing files: Open and parse existing `.kzi` files to quickly modify them.
 - auto-generating ID: The Game ID is automatically generated from the Game Name as you type.
@@ -16,16 +15,20 @@ Simple Python GUI application for creating and editing `.kzi` (Kazeta informatio
 - test Linux/Windows-based cartridges before export
 - D-pad reversal fix for native Linux games: note **this is a Kazeta+-only feature for now.**
 - game and audio CD/DVD burning
+- Kazeta runtime (`.kzr`) and Kazeta game package (`.kzp`) support; compress your games with various compression algorithms, or create Linux/Windows/emulator runtime files
+  - mounting support with `erofsfuse`
 
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Requirements
 - `python3.x` (you may run into issues with certain features if you use Python 3.14 or later)
-- `genisoimage`
-- `wodim`
-- `erofs-utils`
-- `erofsfuse`
-- `pkexec`
+- for CD/DVD burning:
+  - `genisoimage`
+  - `wodim`
+  - `pkexec`
+- for KZR/KZP compression/mounting:
+  - `erofs-utils`
+  - `erofsfuse`
 
 ## Usage
 Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridge-generator/releases) page, download the latest AppImage, and execute it. Note that you may have to mark it as executable in order to run it.
