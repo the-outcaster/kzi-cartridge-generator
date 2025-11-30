@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     wodim \
     erofs-utils \
     erofsfuse \
+    ffmpeg \
+    pkexec \
     python3 \
     python3-dev \
     python3-pip \
@@ -24,7 +26,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 # We install PyInstaller, plus the libraries mentioned in your README/Code
-RUN pip3 install pyinstaller Pillow certifi requests
+RUN pip3 install pyinstaller pillow certifi toml pydub
 
 # Install AppImageTool
 RUN wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool && \

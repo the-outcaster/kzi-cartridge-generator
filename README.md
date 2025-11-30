@@ -52,7 +52,6 @@ Python libraries needed:
 - `certifi`
 - `toml`
 - `pydub`
-- `requests`
 
 Clone the repository:
 
@@ -70,7 +69,7 @@ source venv/bin/activate
 
 Install required Python packages:
 
-`pip install pillow certifi toml pydub requests`
+`pip install pillow certifi toml pydub`
 
 Run the application from your terminal:
 

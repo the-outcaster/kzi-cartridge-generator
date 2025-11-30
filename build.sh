@@ -2,6 +2,7 @@
 clear
 
 APPLICATION_DIR="$HOME/Applications"
+VERSION="2.0"
 
 mkdir -p $APPLICATION_DIR
 mkdir -p $APPLICATION_DIR/KziCartridgeGenerator.AppDir
@@ -52,7 +53,8 @@ if [ ! -f appimagetool-x86_64.AppImage ]; then
 fi
 
 echo -e "\nMaking AppImage for KZI Cartridge Generator..."
-./appimagetool-x86_64.AppImage KziCartridgeGenerator.AppDir
+OUTPUT_NAME="KZI-Cartridge-Generator-${VERSION}-x86_64.AppImage"
+./appimagetool-x86_64.AppImage KziCartridgeGenerator.AppDir "$OUTPUT_NAME"
 
-echo -e "\nDone! AppImage has been stored in $APPLICATION_DIR"
+echo -e "\nDone! AppImage has been stored in $APPLICATION_DIR/$OUTPUT_NAME"
 
