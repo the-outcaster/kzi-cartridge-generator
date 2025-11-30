@@ -47,13 +47,15 @@ Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridg
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Development Requirements
-- Python libraries needed: 
-  - `pillow` 
-  - `certifi`
-  - `toml`
-  - `pydub`
-  - `requests`
-  
+Python libraries needed: 
+- `pillow` 
+- `certifi`
+- `toml`
+- `pydub`
+- `requests`
+
+Clone the repository:
+
 ```
 git clone https://github.com/the-outcaster/kzi-cartridge-generator.git
 cd kzi-cartridge-generator
