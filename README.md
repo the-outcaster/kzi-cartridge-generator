@@ -35,7 +35,7 @@ Swiss army knife utility for [Kazeta](https://kazeta.org)/[Kazeta+](https://gith
 
 | Theme Creator | About Window |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" width="400" /> | <img src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" width="400" /> |
+| <img src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" width="400" /> | <img src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" width="400" /> |
 
 </details>
 
