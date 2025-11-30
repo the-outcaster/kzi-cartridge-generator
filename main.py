@@ -12,6 +12,7 @@ import subprocess
 import shlex
 import shutil
 import urllib.request
+import webbrowser
 
 # Import from our other modules
 from about_window import show_about_window
@@ -19,6 +20,7 @@ from erofs_manager import ErofsManagerWindow
 from iso_burner import IsoBurnerWindow
 from steamgriddb_api import handle_fetch_icon_flow
 from steamgriddb_api import ssl_context # Import the shared SSL context
+from theme_creator import KazetaThemeCreator
 
 
 def get_default_media_path():
@@ -101,6 +103,7 @@ class KziGeneratorApp:
             "Linux 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/linux-1.1.kzr",
             "Windows": "https://runtimes.kazeta.org/windows-1.0.kzr",
             "Windows 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.1.kzr",
+            "Windows 1.2": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.2-experimental.kzr",
             "NES": "https://runtimes.kazeta.org/nes-1.0.kzr",
             "SNES": "https://runtimes.kazeta.org/snes-1.0.kzr",
             "Sega Genesis/Mega Drive": "https://runtimes.kazeta.org/megadrive-1.1.kzr",
@@ -129,7 +132,7 @@ class KziGeneratorApp:
         self.dpad_fix_var.trace_add("write", self._update_preview_trace)
         self.default_game_var.trace_add("write", self._update_preview_trace)
 
-        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
+        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
         self.runtime_var = tk.StringVar(value=runtime_options[0])
         self.runtime_var.trace_add("write", self._update_preview_trace)
 
@@ -243,6 +246,34 @@ class KziGeneratorApp:
         self.preview_text.config(state=tk.DISABLED) # Disable editing
 
     def create_widgets(self, parent):
+        # --- MENU BAR SETUP ---
+        menubar = tk.Menu(self.root)
+
+        # File Menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # Functions Menu
+        func_menu = tk.Menu(menubar, tearoff=0)
+        func_menu.add_command(label="Create Runtime/Game Package", command=self.open_erofs_manager)
+        func_menu.add_command(label="Create Optical Media (Kazeta+)", command=self.open_iso_burner)
+        func_menu.add_command(label="Create Theme (Kazeta+)", command=self.open_theme_creator)
+        menubar.add_cascade(label="Functions", menu=func_menu)
+
+        # Help Menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="KZI Cartridge Generator GitHub", command=lambda: webbrowser.open("https://github.com/the-outcaster/kzi-cartridge-generator"))
+        help_menu.add_command(label="Kazeta+ Wiki", command=lambda: webbrowser.open("https://github.com/the-outcaster/kazeta-plus/wiki"))
+        help_menu.add_command(label="Kazeta Website", command=lambda: webbrowser.open("https://kazeta.org"))
+        help_menu.add_command(label="Kazeta Discord", command=lambda: webbrowser.open("https://discord.gg/JFscNAdzHW"))
+        help_menu.add_separator()
+        help_menu.add_command(label="About", command=lambda: show_about_window(self.root))
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.root.config(menu=menubar)
+
+        # --- MAIN FORM LAYOUT ---
         parent.columnconfigure(1, weight=1)
 
         row_index = 0
@@ -276,12 +307,12 @@ class KziGeneratorApp:
         self.fetch_button = tk.Button(icon_frame, text="Fetch from SteamGridDB", command=self.start_fetch_icon)
         self.fetch_button.grid(row=0, column=2)
 
-        tk.Label(parent, text="GameScope Options:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
+        tk.Label(parent, text="Gamescope Options:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
         self.gamescope_entry = tk.Entry(parent, textvariable=self.gamescope_var)
         self.gamescope_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
         tk.Label(parent, text="Runtime:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
+        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
         self.runtime_menu = tk.OptionMenu(parent, self.runtime_var, *runtime_options)
         self.runtime_menu.grid(row=row_index-1, column=1, sticky="ew", pady=2)
 
@@ -309,35 +340,48 @@ class KziGeneratorApp:
         )
         self.default_game_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
 
-
-        download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=10)
+        # --- UPDATED DOWNLOAD SECTION ---
+        download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=5)
         download_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=10); row_index += 1
         download_frame.columnconfigure(0, weight=1)
 
-        button_container = tk.Frame(download_frame)
-        button_container.grid(row=0, column=0)
-        runtime_buttons = ["Linux", "Linux 1.1", "Windows", "Windows 1.1", "NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
-        for r_name in runtime_buttons:
-            tk.Button(button_container, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=3)
+        # Define Categories
+        runtime_categories = {
+            "Linux": ["Linux", "Linux 1.1"],
+            "Windows": ["Windows", "Windows 1.1", "Windows 1.2"],
+            "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
+        }
 
-        # KZI File Preview Box
+        for category, runtimes in runtime_categories.items():
+            row_frame = tk.Frame(download_frame)
+            row_frame.pack(fill=tk.X, pady=2)
+
+            # Label width fixed to keep buttons aligned
+            tk.Label(row_frame, text=f"{category}:", width=10, anchor="w", font=("", 9, "bold")).pack(side=tk.LEFT)
+
+            for r_name in runtimes:
+                tk.Button(row_frame, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=2)
+
+        # --- KZI PREVIEW ---
         preview_frame = tk.LabelFrame(parent, text="KZI File Preview", padx=10, pady=5)
         preview_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=5); row_index += 1
         self.preview_text = scrolledtext.ScrolledText(preview_frame, height=10, wrap=tk.WORD, state=tk.DISABLED)
         self.preview_text.pack(fill=tk.BOTH, expand=True)
 
+        # --- UPDATED BOTTOM BAR ---
         bottom_bar = tk.Frame(parent)
         bottom_bar.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=(10,0)); row_index += 1
-        bottom_bar.columnconfigure(1, weight=1)
-        bottom_bar.columnconfigure(4, weight=1)
 
-        tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, sticky="w", padx=(0, 5))
-        tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1, sticky="w")
-        tk.Button(bottom_bar, text="About", command=lambda: show_about_window(self.root)).grid(row=0, column=2)
-        tk.Button(bottom_bar, text="Create Runtime/Package...", command=self.open_erofs_manager).grid(row=0, column=3, padx=5)
-        tk.Button(bottom_bar, text="Create CD/DVD...", command=self.open_iso_burner).grid(row=0, column=4, padx=5)
-        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=5, sticky="e", padx=(5, 5))
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=6, sticky="e")
+        # Configure columns to push Test/Generate to the right
+        bottom_bar.columnconfigure(2, weight=1)
+
+        tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, padx=(0, 5))
+        tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1)
+
+        # Spacer is column 2
+
+        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=3, padx=(0, 5))
+        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=4)
 
     def browse_executable(self):
         filetypes = [
@@ -378,6 +422,9 @@ class KziGeneratorApp:
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
 
+    def open_theme_creator(self):
+        KazetaThemeCreator(self.root)
+
     def open_erofs_manager(self):
         ErofsManagerWindow(self.root)
 
@@ -403,7 +450,7 @@ class KziGeneratorApp:
             messagebox.showwarning("Steam is Running", "Please close Steam before testing.")
 
         command = []
-        if runtime == "windows":
+        if runtime == "windows" or runtime == "windows-1.1" or runtime == "windows-1.2":
             if proton_path:
                 command.extend([proton_path, "run"])
                 env = os.environ.copy()
@@ -424,7 +471,7 @@ class KziGeneratorApp:
                     messagebox.showwarning("Steam Not Found", "Could not find Steam installation path. Proton may fail.")
             else:
                 command.append("wine")
-        elif runtime not in ["none", "linux"]:
+        elif runtime not in ["none", "linux", "linux-1.1"]:
             messagebox.showerror("Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
             return
 

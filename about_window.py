@@ -6,11 +6,11 @@ from tkinter import ttk
 import webbrowser
 from tkinter import font as tkFont
 
-version = "1.9"
+version = "2.0"
 copyright_year = "2025"
 source_code_link = "https://github.com/the-outcaster/kzi-cartridge-generator"
 kazeta_home_link = "https://kazeta.org/"
-window_dimensions = "480x250"
+window_dimensions = "480x300"
 author = "Linux Gaming Central"
 
 def show_about_window(parent):
@@ -40,7 +40,7 @@ def show_about_window(parent):
         webbrowser.open_new_tab(url)
 
     # --- Content Labels (placed in the content_frame) ---
-    ttk.Label(content_frame, text="A GUI for making .kzi files for Kazeta cartridges.").pack(anchor="w")
+    ttk.Label(content_frame, text="Swiss-army knife utility for making .kzi files, Kazeta+ themes, \noptical media discs, runtimes, and Kazeta game package (KZP) files.").pack(anchor="w")
     ttk.Label(content_frame, text="").pack() # Spacer
 
     ttk.Label(content_frame, text="Version: " + version).pack(anchor="w")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # ISO Creator and Burner for KZI File Generator
 
+import glob
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
@@ -21,7 +22,6 @@ class IsoBurnerWindow:
 
         # Data Variables
         self.source_folder_var = tk.StringVar()
-        self.kzi_path_var = tk.StringVar()
         self.iso_path_var = tk.StringVar()
 
         # Audio Variables
@@ -76,10 +76,6 @@ class IsoBurnerWindow:
         ttk.Label(source_frame, text="Game Folder:").grid(row=0, column=0, sticky="w")
         ttk.Entry(source_frame, textvariable=self.source_folder_var).grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(source_frame, text="Browse...", command=self.browse_source_folder).grid(row=0, column=2)
-
-        ttk.Label(source_frame, text=".kzi File:").grid(row=1, column=0, sticky="w", pady=5)
-        ttk.Entry(source_frame, textvariable=self.kzi_path_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-        ttk.Button(source_frame, text="Browse...", command=self.browse_kzi_file).grid(row=1, column=2, pady=5)
 
         source_frame.columnconfigure(1, weight=1)
         ttk.Button(source_frame, text="Create ISO from Folder", command=self.start_create_iso).grid(row=2, column=1, pady=10, sticky="ew")
@@ -176,11 +172,6 @@ class IsoBurnerWindow:
             # We pass a COPY of the list so modifications during burn don't crash it
             threading.Thread(target=self._burn_audio_worker, args=(list(self.audio_tracks), drive), daemon=True).start()
 
-    def browse_kzi_file(self):
-        path = filedialog.askopenfilename(filetypes=[("Kazeta Info File", "*.kzi"), ("All files", "*.*")])
-        if path:
-            self.kzi_path_var.set(path)
-
     def scan_optical_drives(self):
         """Scans for optical drives using wodim --devices."""
         drives = []
@@ -223,18 +214,20 @@ class IsoBurnerWindow:
 
     def start_create_iso(self):
         source = self.source_folder_var.get()
-        kzi_path = self.kzi_path_var.get()
 
         if not source or not os.path.isdir(source):
             messagebox.showerror("Error", "Please select a valid source folder first.")
             return
 
-        if not kzi_path or not os.path.exists(kzi_path):
-            messagebox.showerror("Error", "Please select a valid .kzi file to include.")
+        # Check for .kzi file inside the folder
+        kzi_files = glob.glob(os.path.join(source, "*.kzi"))
+
+        if not kzi_files:
+            messagebox.showerror("Error", "No .kzi file found in the selected folder.\nPlease ensure the game folder contains a valid Kazeta cartridge definition.")
             return
 
-        # Use the name of the .kzi file to guess the ISO name
-        kzi_basename = os.path.splitext(os.path.basename(kzi_path))[0]
+        # Use the name of the found .kzi file to guess the ISO name
+        kzi_basename = os.path.splitext(os.path.basename(kzi_files[0]))[0]
         default_name = f"{kzi_basename}.iso"
 
         save_path = filedialog.asksaveasfilename(
@@ -246,8 +239,9 @@ class IsoBurnerWindow:
         if not save_path:
             return
 
-        # Pass both source dir and kzi path to the worker
-        threading.Thread(target=self._create_iso_worker, args=(source, kzi_path, save_path), daemon=True).start()
+        # Pass only source and save_path. We don't need to pass the kzi path
+        # because it's already in the folder.
+        threading.Thread(target=self._create_iso_worker, args=(source, save_path), daemon=True).start()
 
     def _burn_audio_worker(self, track_list, drive):
         self.window.after(0, lambda: self._toggle_ui(False))
@@ -300,32 +294,14 @@ class IsoBurnerWindow:
             self.window.after(0, self.progress.stop)
             self.window.after(0, lambda: self.status_var.set("Ready"))
 
-    def _create_iso_worker(self, source, kzi_source_path, save_path):
+    def _create_iso_worker(self, source, save_path):
         self.window.after(0, lambda: self._toggle_ui(False))
-        self.status_var.set("Preparing files...")
+        self.status_var.set(f"Generating ISO: {os.path.basename(save_path)}...")
         self.progress['mode'] = 'indeterminate'
         self.progress.start(10)
 
-        temp_kzi_dest = None
-        file_already_existed = False
-
         try:
-            # Determine destination path in the source folder
-            kzi_filename = os.path.basename(kzi_source_path)
-            temp_kzi_dest = os.path.join(source, kzi_filename)
-
-            # Safety check: If the file already exists in the source folder, don't overwrite or delete it later
-            if os.path.exists(temp_kzi_dest):
-                file_already_existed = True
-                # We verify if it's the exact same file, if not, we warn logic (or just proceed using the existing one)
-                # For now, we assume if it's there, we just use it, but we do NOT delete it later.
-            else:
-                # Copy the user's .kzi file into the source folder so it gets packed
-                shutil.copy2(kzi_source_path, temp_kzi_dest)
-
-            self.status_var.set(f"Generating ISO: {os.path.basename(save_path)}...")
-
-            # Run genisoimage
+            # Run genisoimage directly on the source folder
             cmd = ['genisoimage', '-o', save_path, '-J', '-R', source]
             process = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -336,15 +312,9 @@ class IsoBurnerWindow:
             self.window.after(0, lambda: messagebox.showinfo("Success", "ISO created successfully!"))
 
         except Exception as e:
-            self.window.after(0, lambda: messagebox.showerror("Error", str(e)))
+            err_msg = str(e) # Capture string immediately
+            self.window.after(0, lambda: messagebox.showerror("Error", err_msg))
         finally:
-            # Clean up: Only delete the KZI file if we were the ones who put it there
-            if temp_kzi_dest and os.path.exists(temp_kzi_dest) and not file_already_existed:
-                try:
-                    os.remove(temp_kzi_dest)
-                except OSError:
-                    pass # Best effort cleanup
-
             self.window.after(0, lambda: self._toggle_ui(True))
             self.window.after(0, self.progress.stop)
             self.window.after(0, lambda: self.status_var.set("Ready"))
