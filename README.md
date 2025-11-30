@@ -21,19 +21,15 @@ Swiss army knife utility for [Kazeta](https://kazeta.org)/[Kazeta+](https://gith
 <details>
 <summary><b>Click to expand Screenshot Gallery</b></summary>
 
-| Main Window | Theme Creator |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/40e08e97-ef53-416c-bc1b-3002714e718a" width="400" /> | <img src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" width="400" /> |
+| <img src="https://github.com/user-attachments/assets/40e08e97-ef53-416c-bc1b-3002714e718a" width="400" /> | <img src="https://github.com/user-attachments/assets/7d7bbe8b-ec4f-4c84-8f83-bad1c535a9bd" width="400" /> |
 
-| Runtime/Package Manager | ISO/Audio Burner |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/7d7bbe8b-ec4f-4c84-8f83-bad1c535a9bd" width="400" /> | <img src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" width="400" /> |
+| <img src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" width="400" /> | <img src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" width="400" /> |
 
-| Audio CD Creation | Theme Exporting |
 | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/09ca5cad-2a0d-4076-91f9-72c4b8121cc5" width="400" /> | <img src="https://github.com/user-attachments/assets/4638f20e-3ddf-4cee-909c-39e22151aeac" width="400" /> |
 
-| About Window | Preview Mode |
 | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" width="400" /> | <img src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" width="400" /> |
 
