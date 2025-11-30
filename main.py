@@ -103,7 +103,7 @@ class KziGeneratorApp:
             "Linux 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/linux-1.1.kzr",
             "Windows": "https://runtimes.kazeta.org/windows-1.0.kzr",
             "Windows 1.1": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.1.kzr",
-            "Windows 1.2": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.2-experimental.kzr",
+            "Windows 1.2 (Experimental)": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/windows-1.2-experimental.kzr",
             "NES": "https://runtimes.kazeta.org/nes-1.0.kzr",
             "SNES": "https://runtimes.kazeta.org/snes-1.0.kzr",
             "Sega Genesis/Mega Drive": "https://runtimes.kazeta.org/megadrive-1.1.kzr",
@@ -348,7 +348,7 @@ class KziGeneratorApp:
         # Define Categories
         runtime_categories = {
             "Linux": ["Linux", "Linux 1.1"],
-            "Windows": ["Windows", "Windows 1.1", "Windows 1.2"],
+            "Windows": ["Windows", "Windows 1.1", "Windows 1.2 (Experimental)"],
             "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
         }
 
