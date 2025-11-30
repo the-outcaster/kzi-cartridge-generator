@@ -9,15 +9,6 @@ Swiss army knife utility for [Kazeta](https://kazeta.org)/[Kazeta+](https://gith
 - create and edit themes for the BIOS (Kazeta+ only)
 
 ## Screenshots
-<img width="929" height="970" alt="Screenshot_20251130_124447" src="https://github.com/user-attachments/assets/40e08e97-ef53-416c-bc1b-3002714e718a" />
-<img width="929" height="970" alt="Screenshot_20251130_125035" src="https://github.com/user-attachments/assets/7d7bbe8b-ec4f-4c84-8f83-bad1c535a9bd" />
-<img width="730" height="708" alt="Screenshot_20251130_125947" src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" />
-<img width="730" height="708" alt="Screenshot_20251130_125410" src="https://github.com/user-attachments/assets/09ca5cad-2a0d-4076-91f9-72c4b8121cc5" />
-<img width="780" height="758" alt="Screenshot_20251130_135103" src="https://github.com/user-attachments/assets/4638f20e-3ddf-4cee-909c-39e22151aeac" />
-<img width="886" height="758" alt="Screenshot_20251130_132809" src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" />
-<img width="983" height="808" alt="Screenshot_20251130_133146" src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" />
-<img width="610" height="458" alt="Screenshot_20251130_133226" src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" />
-
 <details>
 <summary><b>Click to expand Screenshot Gallery</b></summary>
 
@@ -25,18 +16,17 @@ Swiss army knife utility for [Kazeta](https://kazeta.org)/[Kazeta+](https://gith
 | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/40e08e97-ef53-416c-bc1b-3002714e718a" width="400" /> | <img src="https://github.com/user-attachments/assets/7d7bbe8b-ec4f-4c84-8f83-bad1c535a9bd" width="400" /> |
 
-| Audio CD | Runtime/Package Manager |
+| Runtime/Package Manager | Runtime/Package Mounting |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" width="400" /> | <img src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" width="400" /> |
+| <img src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" width="400" /> | <img src="https://github.com/user-attachments/assets/09ca5cad-2a0d-4076-91f9-72c4b8121cc5" width="400" /> |
 
-| Runtime/Package Mounting | ISO Creator |
+| ISO Creator | Audio CD Creator |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/09ca5cad-2a0d-4076-91f9-72c4b8121cc5" width="400" /> | <img src="https://github.com/user-attachments/assets/4638f20e-3ddf-4cee-909c-39e22151aeac" width="400" /> |
+| <img src="https://github.com/user-attachments/assets/4638f20e-3ddf-4cee-909c-39e22151aeac" width="400" /> | <img src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" width="400" /> |
 
 | Theme Creator | About Window |
 | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" width="400" /> | <img src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" width="400" /> |
-
 </details>
 
 ## Requirements
