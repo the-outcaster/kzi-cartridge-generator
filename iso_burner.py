@@ -101,7 +101,7 @@ class IsoBurnerWindow:
         list_frame = ttk.Frame(self.tab_audio)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.track_listbox = tk.Listbox(list_frame, selectmode=tk.SINGLE)
+        self.track_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
         self.track_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.track_listbox.yview)
@@ -159,12 +159,20 @@ class IsoBurnerWindow:
         return f"{filename}   [{duration_str}]"
 
     def remove_audio_track(self):
-        sel = self.track_listbox.curselection()
-        if sel:
-            idx = sel[0]
-            self.track_listbox.delete(idx)
-            del self.audio_tracks[idx]
-            self.update_audio_stats()
+        # curselection returns a tuple of indices, e.g., (0, 2, 3)
+        selection = self.track_listbox.curselection()
+
+        if not selection:
+            return
+
+        # CRITICAL: Delete from the end of the list backwards.
+        # If we delete index 0, index 1 shifts down to 0, breaking subsequent deletes.
+        # sorted(..., reverse=True) ensures we safely delete from bottom up.
+        for index in sorted(selection, reverse=True):
+            self.track_listbox.delete(index)
+            del self.audio_tracks[index]
+
+        self.update_audio_stats()
 
     def clear_audio_tracks(self):
         self.track_listbox.delete(0, tk.END)
