@@ -9,6 +9,7 @@ import subprocess
 import threading
 import shutil
 import time
+import wave
 
 class IsoBurnerWindow:
     def __init__(self, parent):
@@ -107,6 +108,11 @@ class IsoBurnerWindow:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.track_listbox.config(yscrollcommand=scrollbar.set)
 
+        # Stats Label
+        self.audio_stats_var = tk.StringVar(value="Total Time: 00:00 | Total Size: 0 MB")
+        stats_lbl = ttk.Label(self.tab_audio, textvariable=self.audio_stats_var, font=("", 9, "bold"))
+        stats_lbl.pack(anchor="w", pady=(5, 5))
+
         # Toolbar
         btn_frame = ttk.Frame(self.tab_audio)
         btn_frame.pack(fill=tk.X, pady=5)
@@ -132,6 +138,7 @@ class IsoBurnerWindow:
             for f in files:
                 self.audio_tracks.append(f)
                 self.track_listbox.insert(tk.END, os.path.basename(f))
+            self.update_audio_stats()
 
     def remove_audio_track(self):
         sel = self.track_listbox.curselection()
@@ -139,10 +146,12 @@ class IsoBurnerWindow:
             idx = sel[0]
             self.track_listbox.delete(idx)
             del self.audio_tracks[idx]
+            self.update_audio_stats()
 
     def clear_audio_tracks(self):
         self.track_listbox.delete(0, tk.END)
         self.audio_tracks = []
+        self.update_audio_stats()
 
     def move_track(self, direction):
         sel = self.track_listbox.curselection()
@@ -157,6 +166,39 @@ class IsoBurnerWindow:
             self.track_listbox.delete(idx)
             self.track_listbox.insert(new_idx, os.path.basename(self.audio_tracks[new_idx]))
             self.track_listbox.select_set(new_idx)
+
+    def update_audio_stats(self):
+        total_seconds = 0.0
+        total_size_bytes = 0
+
+        for track_path in self.audio_tracks:
+            try:
+                # Calculate Size
+                total_size_bytes += os.path.getsize(track_path)
+
+                # Calculate Duration
+                with wave.open(track_path, 'r') as wav:
+                    frames = wav.getnframes()
+                    rate = wav.getframerate()
+                    duration = frames / float(rate)
+                    total_seconds += duration
+            except Exception:
+                pass # Skip bad files
+
+        # Format Time (MM:SS)
+        mins = int(total_seconds // 60)
+        secs = int(total_seconds % 60)
+
+        # Format Size (MB)
+        size_mb = total_size_bytes / (1024 * 1024)
+
+        # Capacity Check (80 min standard CD)
+        color = "black"
+        if mins >= 80:
+            color = "red" # Warn user if over capacity
+
+        status_text = f"Total Time: {mins:02d}:{secs:02d} | Total Size: {size_mb:.2f} MB"
+        self.audio_stats_var.set(status_text)
 
     def start_burn_audio(self):
         drive = self.selected_drive_var.get()
