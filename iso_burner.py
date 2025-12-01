@@ -137,8 +137,26 @@ class IsoBurnerWindow:
         if files:
             for f in files:
                 self.audio_tracks.append(f)
-                self.track_listbox.insert(tk.END, os.path.basename(f))
+                display_text = self._get_track_display_text(f)
+                self.track_listbox.insert(tk.END, display_text)
             self.update_audio_stats()
+
+    def _get_track_display_text(self, path):
+        """Helper to format listbox entry: Filename [MM:SS]"""
+        filename = os.path.basename(path)
+        duration_str = "--:--"
+        try:
+            with wave.open(path, 'r') as wav:
+                frames = wav.getnframes()
+                rate = wav.getframerate()
+                duration = frames / float(rate)
+                mins = int(duration // 60)
+                secs = int(duration % 60)
+                duration_str = f"{mins:02d}:{secs:02d}"
+        except Exception:
+            pass # Keep default if unreadable
+
+        return f"{filename}   [{duration_str}]"
 
     def remove_audio_track(self):
         sel = self.track_listbox.curselection()
@@ -164,7 +182,8 @@ class IsoBurnerWindow:
             self.audio_tracks[idx], self.audio_tracks[new_idx] = self.audio_tracks[new_idx], self.audio_tracks[idx]
             # Update UI
             self.track_listbox.delete(idx)
-            self.track_listbox.insert(new_idx, os.path.basename(self.audio_tracks[new_idx]))
+            display_text = self._get_track_display_text(self.audio_tracks[new_idx])
+            self.track_listbox.insert(new_idx, display_text)
             self.track_listbox.select_set(new_idx)
 
     def update_audio_stats(self):
