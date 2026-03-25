@@ -1,148 +1,343 @@
 #!/usr/bin/env python3
 # ISO Creator and Burner for KZI File Generator
 
-import glob
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 import os
 import subprocess
-import threading
 import shutil
+import glob
 import time
 import wave
 
-class IsoBurnerWindow:
-    def __init__(self, parent):
-        self.parent = parent
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QTabWidget,
+    QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QProgressBar,
+    QFileDialog, QMessageBox, QListWidget, QAbstractItemView, QListWidgetItem
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
-        self.window = tk.Toplevel(parent)
-        self.window.title("Create & Burn Disc (Data or Audio)") # Updated Title
-        self.window.geometry("650x600") # Increased height for tabs
-        self.window.transient(parent)
-        self.window.grab_set()
+# --- Background Worker for Creating ISO ---
+class CreateIsoWorker(QThread):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
 
-        # Data Variables
-        self.source_folder_var = tk.StringVar()
-        self.iso_path_var = tk.StringVar()
+    def __init__(self, source, save_path):
+        super().__init__()
+        self.source = source
+        self.save_path = save_path
 
-        # Audio Variables
-        self.audio_tracks = [] # List to store paths of .wav files
+    def run(self):
+        try:
+            cmd = ['genisoimage', '-o', self.save_path, '-J', '-R', self.source]
+            process = subprocess.run(cmd, capture_output=True, text=True)
 
-        # Shared Variables
-        self.selected_drive_var = tk.StringVar()
-        self.status_var = tk.StringVar(value="Ready")
+            if process.returncode != 0:
+                raise Exception(f"genisoimage failed:\n{process.stderr}")
 
-        self.create_widgets()
+            self.finished.emit(self.save_path)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+# --- Background Worker for Burning (Wodim) ---
+class WodimWorker(QThread):
+    progress = pyqtSignal(str)
+    finished = pyqtSignal()
+    error = pyqtSignal(int, str) # Return code, error details
+
+    def __init__(self, cmd):
+        super().__init__()
+        self.cmd = cmd
+
+    def run(self):
+        try:
+            process = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            output_log = []
+
+            # Read output live
+            for line in process.stdout:
+                output_log.append(line)
+                if "written" in line and "%" in line:
+                    self.progress.emit(line.strip())
+
+            process.wait()
+
+            if process.returncode == 0:
+                self.finished.emit()
+            else:
+                error_details = "".join(output_log[-15:])
+                self.error.emit(process.returncode, error_details)
+
+        except Exception as e:
+            self.error.emit(-1, str(e))
+
+
+class IsoBurnerWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Create & Burn Disc (Data or Audio)")
+        self.resize(650, 600)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+
+        self.setup_ui()
         self.scan_optical_drives()
 
-    def create_widgets(self):
-        main_frame = ttk.Frame(self.window, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
 
         # --- Global: Drive Selection ---
-        drive_frame = ttk.LabelFrame(main_frame, text="Target Optical Drive", padding=10)
-        drive_frame.pack(fill=tk.X, pady=(0, 10))
+        drive_group = QGroupBox("Target Optical Drive")
+        drive_layout = QHBoxLayout(drive_group)
 
-        self.drive_combo = ttk.Combobox(drive_frame, textvariable=self.selected_drive_var, state="readonly")
-        self.drive_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        ttk.Button(drive_frame, text="Refresh", command=self.scan_optical_drives).pack(side=tk.LEFT)
+        self.drive_combo = QComboBox()
+        self.btn_refresh_drives = QPushButton("Refresh")
+        self.btn_refresh_drives.clicked.connect(self.scan_optical_drives)
+
+        drive_layout.addWidget(self.drive_combo, stretch=1)
+        drive_layout.addWidget(self.btn_refresh_drives)
+        main_layout.addWidget(drive_group)
 
         # --- Tabs ---
-        self.notebook = ttk.Notebook(main_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
 
         # Tab 1: Data / Game ISO
-        self.tab_data = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_data, text="Data / Game ISO")
-        self.setup_data_tab()
+        self.tab_data = QWidget()
+        self.setup_data_tab(self.tab_data)
+        self.tabs.addTab(self.tab_data, "Data / Game ISO")
 
         # Tab 2: Audio CD
-        self.tab_audio = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_audio, text="Audio CD")
-        self.setup_audio_tab()
+        self.tab_audio = QWidget()
+        self.setup_audio_tab(self.tab_audio)
+        self.tabs.addTab(self.tab_audio, "Audio CD")
 
         # --- Global: Status ---
-        status_frame = ttk.Frame(main_frame)
-        status_frame.pack(fill=tk.X, pady=(10, 0), side=tk.BOTTOM)
+        status_layout = QVBoxLayout()
+        self.status_label = QLabel("Ready")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
 
-        ttk.Label(status_frame, textvariable=self.status_var).pack(anchor="w")
-        self.progress = ttk.Progressbar(status_frame, orient="horizontal", mode="determinate")
-        self.progress.pack(fill=tk.X, pady=(5, 0))
+        status_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.progress_bar)
+        main_layout.addLayout(status_layout)
 
-    def setup_data_tab(self):
-        # --- Section 1: Source ---
-        source_frame = ttk.LabelFrame(self.tab_data, text="1. Source Selection", padding=10)
-        source_frame.pack(fill=tk.X, pady=5)
+    def setup_data_tab(self, parent_widget):
+        layout = QVBoxLayout(parent_widget)
 
-        ttk.Label(source_frame, text="Game Folder:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(source_frame, textvariable=self.source_folder_var).grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(source_frame, text="Browse...", command=self.browse_source_folder).grid(row=0, column=2)
+        # Section 1: Source
+        source_group = QGroupBox("1. Source Selection")
+        source_layout = QGridLayout(source_group)
 
-        source_frame.columnconfigure(1, weight=1)
-        ttk.Button(source_frame, text="Create ISO from Folder", command=self.start_create_iso).grid(row=2, column=1, pady=10, sticky="ew")
+        source_layout.addWidget(QLabel("Game Folder:"), 0, 0)
+        self.source_input = QLineEdit()
+        source_layout.addWidget(self.source_input, 0, 1)
 
-        # --- Section 2: Burn ---
-        iso_frame = ttk.LabelFrame(self.tab_data, text="2. Burn ISO Image", padding=10)
-        iso_frame.pack(fill=tk.X, pady=10)
+        self.btn_browse_source = QPushButton("Browse...")
+        self.btn_browse_source.clicked.connect(self.browse_source_folder)
+        source_layout.addWidget(self.btn_browse_source, 0, 2)
 
-        ttk.Label(iso_frame, text="ISO File:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(iso_frame, textvariable=self.iso_path_var).grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(iso_frame, text="Browse...", command=self.browse_iso_file).grid(row=0, column=2)
+        self.btn_create_iso = QPushButton("Create ISO from Folder")
+        self.btn_create_iso.clicked.connect(self.start_create_iso)
+        source_layout.addWidget(self.btn_create_iso, 1, 1, 1, 2) # Span columns
+        layout.addWidget(source_group)
 
-        iso_frame.columnconfigure(1, weight=1)
-        self.burn_iso_button = ttk.Button(iso_frame, text="Burn ISO to Disc", command=self.start_burn_iso)
-        self.burn_iso_button.grid(row=1, column=1, pady=(10, 0), sticky="ew")
+        # Section 2: Burn
+        iso_group = QGroupBox("2. Burn ISO Image")
+        iso_layout = QGridLayout(iso_group)
 
-    def setup_audio_tab(self):
-        info_lbl = ttk.Label(self.tab_audio, text="Add WAV files (16-bit, 44.1kHz). Track order matters.", foreground="gray")
-        info_lbl.pack(anchor="w", pady=(0, 5))
+        iso_layout.addWidget(QLabel("ISO File:"), 0, 0)
+        self.iso_input = QLineEdit()
+        iso_layout.addWidget(self.iso_input, 0, 1)
 
-        # Listbox with scrollbar
-        list_frame = ttk.Frame(self.tab_audio)
-        list_frame.pack(fill=tk.BOTH, expand=True)
+        self.btn_browse_iso = QPushButton("Browse...")
+        self.btn_browse_iso.clicked.connect(self.browse_iso_file)
+        iso_layout.addWidget(self.btn_browse_iso, 0, 2)
 
-        self.track_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
-        self.track_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.btn_burn_iso = QPushButton("Burn ISO to Disc")
+        self.btn_burn_iso.setMinimumHeight(40)
+        self.btn_burn_iso.clicked.connect(self.start_burn_iso)
+        iso_layout.addWidget(self.btn_burn_iso, 1, 1, 1, 2)
+        layout.addWidget(iso_group)
 
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.track_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.track_listbox.config(yscrollcommand=scrollbar.set)
+        layout.addStretch() # Push everything to top
+
+    def setup_audio_tab(self, parent_widget):
+        layout = QVBoxLayout(parent_widget)
+
+        info_lbl = QLabel("Add WAV files (16-bit, 44.1kHz). Track order matters.")
+        info_lbl.setStyleSheet("color: gray;")
+        layout.addWidget(info_lbl)
+
+        # Listbox for tracks
+        self.track_listbox = QListWidget()
+        self.track_listbox.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        layout.addWidget(self.track_listbox)
 
         # Stats Label
-        self.audio_stats_var = tk.StringVar(value="Total Time: 00:00 | Total Size: 0 MB")
-        stats_lbl = ttk.Label(self.tab_audio, textvariable=self.audio_stats_var, font=("", 9, "bold"))
-        stats_lbl.pack(anchor="w", pady=(5, 5))
+        self.audio_stats_label = QLabel("Total Time: 00:00 | Total Size: 0.00 MB")
+        self.audio_stats_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self.audio_stats_label)
 
         # Toolbar
-        btn_frame = ttk.Frame(self.tab_audio)
-        btn_frame.pack(fill=tk.X, pady=5)
+        toolbar_layout = QHBoxLayout()
 
-        ttk.Button(btn_frame, text="Add Files...", command=self.add_audio_files).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Remove", command=self.remove_audio_track).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Clear All", command=self.clear_audio_tracks).pack(side=tk.LEFT, padx=2)
+        btn_add = QPushButton("Add Files...")
+        btn_add.clicked.connect(self.add_audio_files)
 
-        ttk.Frame(btn_frame).pack(side=tk.LEFT, fill=tk.X, expand=True) # Spacer
+        btn_remove = QPushButton("Remove")
+        btn_remove.clicked.connect(self.remove_audio_track)
 
-        ttk.Button(btn_frame, text="Move Up", command=lambda: self.move_track(-1)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Move Down", command=lambda: self.move_track(1)).pack(side=tk.LEFT, padx=2)
+        btn_clear = QPushButton("Clear All")
+        btn_clear.clicked.connect(self.clear_audio_tracks)
 
-        self.burn_audio_button = ttk.Button(self.tab_audio, text="Burn Audio CD", command=self.start_burn_audio)
-        self.burn_audio_button.pack(fill=tk.X, pady=10)
+        btn_up = QPushButton("Move Up")
+        btn_up.clicked.connect(lambda: self.move_track(-1))
+
+        btn_down = QPushButton("Move Down")
+        btn_down.clicked.connect(lambda: self.move_track(1))
+
+        toolbar_layout.addWidget(btn_add)
+        toolbar_layout.addWidget(btn_remove)
+        toolbar_layout.addWidget(btn_clear)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(btn_up)
+        toolbar_layout.addWidget(btn_down)
+        layout.addLayout(toolbar_layout)
+
+        self.btn_burn_audio = QPushButton("Burn Audio CD")
+        self.btn_burn_audio.setMinimumHeight(40)
+        self.btn_burn_audio.clicked.connect(self.start_burn_audio)
+        layout.addWidget(self.btn_burn_audio)
+
+    # --- Drive Logic ---
+    def scan_optical_drives(self):
+        self.drive_combo.clear()
+        drives = []
+        try:
+            result = subprocess.run(['wodim', '--devices'], capture_output=True, text=True)
+            for line in result.stdout.splitlines():
+                if '/dev/' in line:
+                    parts = line.split()
+                    for part in parts:
+                        if part.startswith('/dev/'):
+                            drives.append(part.strip("'"))
+                            break
+        except FileNotFoundError:
+            QMessageBox.critical(self, "Missing Dependency", "The tool 'wodim' is required to detect drives and burn discs.\nPlease install it (e.g., 'sudo dnf install wodim').")
+
+        # Fallback
+        if not drives:
+            drives = glob.glob('/dev/sr*')
+
+        if drives:
+            self.drive_combo.addItems(drives)
+            self.drive_combo.setCurrentIndex(0)
+        else:
+            self.drive_combo.addItem("No drives found")
+
+    # --- Data / ISO Logic ---
+    def browse_source_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Source Directory")
+        if path:
+            self.source_input.setText(path)
+
+    def browse_iso_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select ISO Image", "", "ISO Image (*.iso);;All files (*.*)")
+        if path:
+            self.iso_input.setText(path)
+
+    def start_create_iso(self):
+        source = self.source_input.text().strip()
+
+        if not source or not os.path.isdir(source):
+            QMessageBox.critical(self, "Error", "Please select a valid source folder first.")
+            return
+
+        kzi_files = glob.glob(os.path.join(source, "*.kzi"))
+        if not kzi_files:
+            QMessageBox.critical(self, "Error", "No .kzi file found in the selected folder.\nPlease ensure the game folder contains a valid Kazeta cartridge definition.")
+            return
+
+        kzi_basename = os.path.splitext(os.path.basename(kzi_files[0]))[0]
+        default_name = f"{kzi_basename}.iso"
+
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save ISO As...", default_name, "ISO Image (*.iso)")
+        if not save_path:
+            return
+
+        self._toggle_ui(False)
+        self.status_label.setText(f"Generating ISO: {os.path.basename(save_path)}...")
+        self.progress_bar.setRange(0, 0) # Indeterminate mode
+
+        self.iso_worker = CreateIsoWorker(source, save_path)
+        self.iso_worker.finished.connect(self.on_iso_created)
+        self.iso_worker.error.connect(self.on_worker_error)
+        self.iso_worker.start()
+
+    def on_iso_created(self, save_path):
+        self._toggle_ui(True)
+        self.iso_input.setText(save_path)
+        QMessageBox.information(self, "Success", "ISO created successfully!")
+
+    def start_burn_iso(self):
+        iso_file = self.iso_input.text().strip()
+        drive = self.drive_combo.currentText()
+
+        if not iso_file or not os.path.exists(iso_file):
+            QMessageBox.critical(self, "Error", "Please select a valid ISO file.")
+            return
+        if not drive or "/dev/" not in drive:
+            QMessageBox.critical(self, "Error", "Please select a valid optical drive.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirm Burn",
+            f"Are you sure you want to burn '{os.path.basename(iso_file)}' to {drive}?\nThis will erase any re-writable data on the disc.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.No:
+            return
+
+        self._toggle_ui(False)
+        self.status_label.setText("Waiting for authentication...")
+        self.progress_bar.setRange(0, 0)
+
+        wodim_path = shutil.which('wodim')
+        if not wodim_path:
+            self._toggle_ui(True)
+            QMessageBox.critical(self, "Error", "wodim not found. Please install 'cdrkit' or 'wodim'.")
+            return
+
+        cmd = ['pkexec', wodim_path, '-v', '-eject', '-dao', f'dev={drive}', iso_file]
+
+        self.burn_worker = WodimWorker(cmd)
+        self.burn_worker.progress.connect(self.update_burn_progress)
+        self.burn_worker.finished.connect(self.on_burn_success)
+        self.burn_worker.error.connect(self.on_burn_error)
+        self.burn_worker.start()
+
+    # --- Audio Tab Logic ---
+    def _get_audio_tracks(self):
+        """Helper to extract filepaths stored in the list widget"""
+        tracks = []
+        for i in range(self.track_listbox.count()):
+            item = self.track_listbox.item(i)
+            # Retrieve the path we hid inside the Qt Item Role
+            tracks.append(item.data(Qt.ItemDataRole.UserRole))
+        return tracks
 
     def add_audio_files(self):
-        files = filedialog.askopenfilenames(
-            title="Select Audio Tracks",
-            filetypes=[("WAV Files", "*.wav")]
-        )
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Audio Tracks", "", "WAV Files (*.wav)")
         if files:
-            for f in files:
-                self.audio_tracks.append(f)
-                display_text = self._get_track_display_text(f)
-                self.track_listbox.insert(tk.END, display_text)
+            for path in files:
+                display_text = self._get_track_display_text(path)
+                item = QListWidgetItem(display_text)
+                # Store the absolute path securely inside the item object
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                self.track_listbox.addItem(item)
             self.update_audio_stats()
 
     def _get_track_display_text(self, path):
-        """Helper to format listbox entry: Filename [MM:SS]"""
         filename = os.path.basename(path)
         duration_str = "--:--"
         try:
@@ -154,308 +349,137 @@ class IsoBurnerWindow:
                 secs = int(duration % 60)
                 duration_str = f"{mins:02d}:{secs:02d}"
         except Exception:
-            pass # Keep default if unreadable
+            pass
 
         return f"{filename}   [{duration_str}]"
 
     def remove_audio_track(self):
-        # curselection returns a tuple of indices, e.g., (0, 2, 3)
-        selection = self.track_listbox.curselection()
-
-        if not selection:
-            return
-
-        # CRITICAL: Delete from the end of the list backwards.
-        # If we delete index 0, index 1 shifts down to 0, breaking subsequent deletes.
-        # sorted(..., reverse=True) ensures we safely delete from bottom up.
-        for index in sorted(selection, reverse=True):
-            self.track_listbox.delete(index)
-            del self.audio_tracks[index]
-
+        # Delete from bottom to top to prevent index shifting
+        for item in self.track_listbox.selectedItems():
+            self.track_listbox.takeItem(self.track_listbox.row(item))
         self.update_audio_stats()
 
     def clear_audio_tracks(self):
-        self.track_listbox.delete(0, tk.END)
-        self.audio_tracks = []
+        self.track_listbox.clear()
         self.update_audio_stats()
 
     def move_track(self, direction):
-        sel = self.track_listbox.curselection()
-        if not sel: return
-        idx = sel[0]
-        new_idx = idx + direction
+        selected = self.track_listbox.selectedItems()
+        if not selected:
+            return
 
-        if 0 <= new_idx < len(self.audio_tracks):
-            # Swap in list
-            self.audio_tracks[idx], self.audio_tracks[new_idx] = self.audio_tracks[new_idx], self.audio_tracks[idx]
-            # Update UI
-            self.track_listbox.delete(idx)
-            display_text = self._get_track_display_text(self.audio_tracks[new_idx])
-            self.track_listbox.insert(new_idx, display_text)
-            self.track_listbox.select_set(new_idx)
+        # We only move the first selected item for simplicity
+        item = selected[0]
+        row = self.track_listbox.row(item)
+        new_row = row + direction
+
+        if 0 <= new_row < self.track_listbox.count():
+            self.track_listbox.takeItem(row)
+            self.track_listbox.insertItem(new_row, item)
+            item.setSelected(True)
 
     def update_audio_stats(self):
         total_seconds = 0.0
         total_size_bytes = 0
+        tracks = self._get_audio_tracks()
 
-        for track_path in self.audio_tracks:
+        for track_path in tracks:
             try:
-                # Calculate Size
                 total_size_bytes += os.path.getsize(track_path)
-
-                # Calculate Duration
                 with wave.open(track_path, 'r') as wav:
                     frames = wav.getnframes()
                     rate = wav.getframerate()
                     duration = frames / float(rate)
                     total_seconds += duration
             except Exception:
-                pass # Skip bad files
+                pass
 
-        # Format Time (MM:SS)
         mins = int(total_seconds // 60)
         secs = int(total_seconds % 60)
-
-        # Format Size (MB)
         size_mb = total_size_bytes / (1024 * 1024)
 
-        # Capacity Check (80 min standard CD)
-        color = "black"
-        if mins >= 80:
-            color = "red" # Warn user if over capacity
-
         status_text = f"Total Time: {mins:02d}:{secs:02d} | Total Size: {size_mb:.2f} MB"
-        self.audio_stats_var.set(status_text)
+        self.audio_stats_label.setText(status_text)
+
+        # Color coding warning
+        if mins >= 80:
+            self.audio_stats_label.setStyleSheet("font-weight: bold; color: red;")
+        else:
+            self.audio_stats_label.setStyleSheet("font-weight: bold; color: palette(text);")
 
     def start_burn_audio(self):
-        drive = self.selected_drive_var.get()
+        drive = self.drive_combo.currentText()
+        tracks = self._get_audio_tracks()
+
         if not drive or "/dev/" not in drive:
-            messagebox.showerror("Error", "Please select a valid optical drive.")
+            QMessageBox.critical(self, "Error", "Please select a valid optical drive.")
             return
 
-        if not self.audio_tracks:
-            messagebox.showerror("Error", "Please add at least one .wav file.")
+        if not tracks:
+            QMessageBox.critical(self, "Error", "Please add at least one .wav file.")
             return
 
-        if messagebox.askyesno("Confirm Audio Burn", f"Burn {len(self.audio_tracks)} tracks to {drive}?\nEnsure files are 16-bit 44.1kHz WAVs."):
-            # We pass a COPY of the list so modifications during burn don't crash it
-            threading.Thread(target=self._burn_audio_worker, args=(list(self.audio_tracks), drive), daemon=True).start()
-
-    def scan_optical_drives(self):
-        """Scans for optical drives using wodim --devices."""
-        drives = []
-        try:
-            # 'wodim --devices' usually lists available drives
-            result = subprocess.run(['wodim', '--devices'], capture_output=True, text=True)
-            for line in result.stdout.splitlines():
-                # Example output: '/dev/sr0' ...
-                if '/dev/' in line:
-                    parts = line.split()
-                    for part in parts:
-                        if part.startswith('/dev/'):
-                            # Strip quotes if present
-                            drive = part.strip("'")
-                            drives.append(drive)
-                            break
-        except FileNotFoundError:
-             messagebox.showerror("Missing Dependency", "The tool 'wodim' is required to detect drives and burn discs.\nPlease install it (e.g., 'sudo dnf install wodim').")
-
-        # Fallback if wodim fails or finds nothing (e.g. no perms), try listing /dev/sr*
-        if not drives:
-            import glob
-            drives = glob.glob('/dev/sr*')
-
-        self.drive_combo['values'] = drives
-        if drives:
-            self.drive_combo.current(0)
-        else:
-            self.selected_drive_var.set("No drives found")
-
-    def browse_source_folder(self):
-        path = filedialog.askdirectory()
-        if path:
-            self.source_folder_var.set(path)
-
-    def browse_iso_file(self):
-        path = filedialog.askopenfilename(filetypes=[("ISO Image", "*.iso"), ("All files", "*.*")])
-        if path:
-            self.iso_path_var.set(path)
-
-    def start_create_iso(self):
-        source = self.source_folder_var.get()
-
-        if not source or not os.path.isdir(source):
-            messagebox.showerror("Error", "Please select a valid source folder first.")
-            return
-
-        # Check for .kzi file inside the folder
-        kzi_files = glob.glob(os.path.join(source, "*.kzi"))
-
-        if not kzi_files:
-            messagebox.showerror("Error", "No .kzi file found in the selected folder.\nPlease ensure the game folder contains a valid Kazeta cartridge definition.")
-            return
-
-        # Use the name of the found .kzi file to guess the ISO name
-        kzi_basename = os.path.splitext(os.path.basename(kzi_files[0]))[0]
-        default_name = f"{kzi_basename}.iso"
-
-        save_path = filedialog.asksaveasfilename(
-            title="Save ISO As...",
-            initialfile=default_name,
-            defaultextension=".iso",
-            filetypes=[("ISO Image", "*.iso")]
+        reply = QMessageBox.question(
+            self, "Confirm Audio Burn",
+            f"Burn {len(tracks)} tracks to {drive}?\nEnsure files are 16-bit 44.1kHz WAVs.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if not save_path:
+        if reply == QMessageBox.StandardButton.No:
             return
 
-        # Pass only source and save_path. We don't need to pass the kzi path
-        # because it's already in the folder.
-        threading.Thread(target=self._create_iso_worker, args=(source, save_path), daemon=True).start()
+        self._toggle_ui(False)
+        self.status_label.setText("Waiting for authentication...")
+        self.progress_bar.setRange(0, 0)
 
-    def _burn_audio_worker(self, track_list, drive):
-        self.window.after(0, lambda: self._toggle_ui(False))
-        self.status_var.set("Waiting for authentication...")
-        self.progress['mode'] = 'indeterminate'
-        self.progress.start(10)
-
-        try:
-            wodim_path = shutil.which('wodim')
-            if not wodim_path:
-                 raise Exception("wodim not found.")
-
-            # Command for Audio CD
-            # -audio: Tells wodim these are audio tracks
-            # -pad: Adds silence if tracks aren't perfect sector multiples (prevents errors)
-            cmd = ['pkexec', wodim_path, '-v', '-eject', '-dao', '-audio', '-pad', f'dev={drive}']
-
-            # Append all track paths to the command
-            cmd.extend(track_list)
-
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
-            self.window.after(0, lambda: self.status_var.set("Burning Audio CD..."))
-
-            output_log = []
-            for line in process.stdout:
-                output_log.append(line)
-                if "written" in line and "%" in line:
-                    try:
-                         clean_line = line.strip()
-                         self.window.after(0, lambda l=clean_line: self.status_var.set(l))
-                    except:
-                        pass
-
-            process.wait()
-
-            if process.returncode == 0:
-                self.window.after(0, lambda: messagebox.showinfo("Success", "Audio CD created successfully!"))
-            else:
-                if process.returncode in [126, 127]:
-                     self.window.after(0, lambda: messagebox.showerror("Error", "Authentication failed or cancelled."))
-                else:
-                     error_details = "".join(output_log[-15:])
-                     self.window.after(0, lambda: messagebox.showerror("Error", f"Burning failed.\n\nDetails:\n{error_details}"))
-
-        except Exception as e:
-            self.window.after(0, lambda: messagebox.showerror("Error", str(e)))
-        finally:
-            self.window.after(0, lambda: self._toggle_ui(True))
-            self.window.after(0, self.progress.stop)
-            self.window.after(0, lambda: self.status_var.set("Ready"))
-
-    def _create_iso_worker(self, source, save_path):
-        self.window.after(0, lambda: self._toggle_ui(False))
-        self.status_var.set(f"Generating ISO: {os.path.basename(save_path)}...")
-        self.progress['mode'] = 'indeterminate'
-        self.progress.start(10)
-
-        try:
-            # Run genisoimage directly on the source folder
-            cmd = ['genisoimage', '-o', save_path, '-J', '-R', source]
-            process = subprocess.run(cmd, capture_output=True, text=True)
-
-            if process.returncode != 0:
-                raise Exception(f"genisoimage failed:\n{process.stderr}")
-
-            self.window.after(0, lambda: self.iso_path_var.set(save_path))
-            self.window.after(0, lambda: messagebox.showinfo("Success", "ISO created successfully!"))
-
-        except Exception as e:
-            err_msg = str(e) # Capture string immediately
-            self.window.after(0, lambda: messagebox.showerror("Error", err_msg))
-        finally:
-            self.window.after(0, lambda: self._toggle_ui(True))
-            self.window.after(0, self.progress.stop)
-            self.window.after(0, lambda: self.status_var.set("Ready"))
-
-    def start_burn_iso(self):
-        iso_file = self.iso_path_var.get()
-        drive = self.selected_drive_var.get()
-
-        if not iso_file or not os.path.exists(iso_file):
-            messagebox.showerror("Error", "Please select a valid ISO file.")
-            return
-        if not drive or "/dev/" not in drive:
-            messagebox.showerror("Error", "Please select a valid optical drive.")
+        wodim_path = shutil.which('wodim')
+        if not wodim_path:
+            self._toggle_ui(True)
+            QMessageBox.critical(self, "Error", "wodim not found. Please install 'cdrkit' or 'wodim'.")
             return
 
-        if messagebox.askyesno("Confirm Burn", f"Are you sure you want to burn '{os.path.basename(iso_file)}' to {drive}?\nThis will erase any re-writable data on the disc."):
-            threading.Thread(target=self._burn_iso_worker, args=(iso_file, drive), daemon=True).start()
+        cmd = ['pkexec', wodim_path, '-v', '-eject', '-dao', '-audio', '-pad', f'dev={drive}']
+        cmd.extend(tracks)
 
-    def _burn_iso_worker(self, iso_file, drive):
-        self.window.after(0, lambda: self._toggle_ui(False))
-        self.status_var.set("Waiting for authentication...") # Update status to let user know
-        self.progress['mode'] = 'indeterminate'
-        self.progress.start(10)
+        self.burn_worker = WodimWorker(cmd)
+        self.burn_worker.progress.connect(self.update_burn_progress)
+        self.burn_worker.finished.connect(self.on_burn_success)
+        self.burn_worker.error.connect(self.on_burn_error)
+        self.burn_worker.start()
 
-        try:
-            # Locate wodim executable
-            wodim_path = shutil.which('wodim')
-            if not wodim_path:
-                 raise Exception("wodim not found. Please install 'cdrkit' or 'wodim'.")
+    # --- Shared Burn Slots ---
+    def update_burn_progress(self, progress_text):
+        self.status_label.setText(progress_text)
 
-            # construct command with pkexec to request admin permissions
-            # pkexec will trigger a GUI password prompt
-            cmd = ['pkexec', wodim_path, '-v', '-eject', '-dao', f'dev={drive}', iso_file]
+    def on_burn_success(self):
+        self._toggle_ui(True)
+        QMessageBox.information(self, "Success", "Burning complete! Disc ejected.")
 
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    def on_burn_error(self, returncode, error_details):
+        self._toggle_ui(True)
+        if returncode in [126, 127]:
+            QMessageBox.critical(self, "Error", "Authentication failed or cancelled.")
+        else:
+            QMessageBox.critical(self, "Error", f"Burning failed.\n\nDetails:\n{error_details}")
 
-            # Once the process starts, update status
-            self.window.after(0, lambda: self.status_var.set("Burning to disc (this may take a while)..."))
-
-            output_log = []
-
-            for line in process.stdout:
-                output_log.append(line)
-                if "written" in line and "%" in line:
-                    try:
-                         clean_line = line.strip()
-                         self.window.after(0, lambda l=clean_line: self.status_var.set(l))
-                    except:
-                        pass
-
-            process.wait()
-
-            if process.returncode == 0:
-                self.window.after(0, lambda: messagebox.showinfo("Success", "Burning complete! Disc ejected."))
-            else:
-                # Filter out lines that might just be pkexec noise if user cancelled
-                if process.returncode == 126 or process.returncode == 127:
-                     self.window.after(0, lambda: messagebox.showerror("Error", "Authentication failed or cancelled."))
-                else:
-                     error_details = "".join(output_log[-15:])
-                     self.window.after(0, lambda: messagebox.showerror("Error", f"Burning process returned an error code.\n\nDetails:\n{error_details}"))
-
-        except Exception as e:
-            self.window.after(0, lambda: messagebox.showerror("Error", str(e)))
-        finally:
-            self.window.after(0, lambda: self._toggle_ui(True))
-            self.window.after(0, self.progress.stop)
-            self.window.after(0, lambda: self.status_var.set("Ready"))
+    def on_worker_error(self, err_msg):
+        self._toggle_ui(True)
+        QMessageBox.critical(self, "Error", err_msg)
 
     def _toggle_ui(self, enable):
-        state = tk.NORMAL if enable else tk.DISABLED
-        self.burn_iso_button.config(state=state)
-        self.burn_audio_button.config(state=state)
-        # Optional: Disable notebook tabs to prevent switching during burn
-        self.notebook.state(['!disabled'] if enable else ['disabled'])
+        self.tabs.setEnabled(enable)
+        self.btn_burn_iso.setEnabled(enable)
+        self.btn_burn_audio.setEnabled(enable)
+
+        if enable:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            self.status_label.setText("Ready")
+
+
+if __name__ == "__main__":
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication(sys.argv)
+    window = IsoBurnerWindow()
+    window.show()
+    sys.exit(app.exec())

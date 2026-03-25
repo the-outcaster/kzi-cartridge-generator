@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # KZI File Generator - A GUI for creating .kzi cartridge files for Kazeta
 
-import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
-import threading
+import sys
 import os
 import getpass
 import time
@@ -14,32 +12,36 @@ import shutil
 import urllib.request
 import webbrowser
 
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QFormLayout, QLineEdit, QPushButton, QComboBox, QCheckBox,
+    QTextEdit, QLabel, QFileDialog, QMessageBox, QGroupBox,
+    QProgressBar, QDialog
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QAction, QIcon
+
 # Import from our other modules
 from about_window import show_about_window
 from erofs_manager import ErofsManagerWindow
 from iso_burner import IsoBurnerWindow
 from steamgriddb_api import handle_fetch_icon_flow
-from steamgriddb_api import ssl_context # Import the shared SSL context
+from steamgriddb_api import ssl_context
 from theme_creator import KazetaThemeCreator
 
-
 def get_default_media_path():
-    """Finds a likely path for mounted removable media."""
     username = getpass.getuser()
     possible_paths = [f"/run/media/{username}", f"/media/{username}", "/media"]
     for path in possible_paths:
         if os.path.isdir(path):
             return path
-    # Fallback to home dir if no media path found
     home_dir = os.path.expanduser("~")
-    # Also check for user's media dirs inside home, just in case
     for path in [os.path.join(home_dir, "media"), os.path.join(home_dir, "run/media")]:
         if os.path.isdir(path):
             return path
     return home_dir
 
 def is_steam_running():
-    """Checks if a Steam process is currently running using pgrep."""
     try:
         subprocess.check_call(['pgrep', '-x', 'steam'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
@@ -47,17 +49,12 @@ def is_steam_running():
         return False
 
 def run_command_in_new_terminal(command_list, env=None, cwd=None):
-    """
-    Tries to run a command in a new terminal window, with an optional environment and working directory.
-    The window will remain open after the command finishes.
-    """
     if len(command_list) == 1 and ' ' in command_list[0]:
          command_string = command_list[0]
     else:
          command_string = shlex.join(command_list)
 
     cd_command = f'cd {shlex.quote(cwd)} && ' if cwd else ''
-
     wrapper_script = (
         f'{cd_command}{command_string};'
         ' echo;'
@@ -83,20 +80,63 @@ def run_command_in_new_terminal(command_list, env=None, cwd=None):
                 print(f"Warning: Failed to launch with {term}: {e}")
                 continue
 
-    messagebox.showerror(
-        "Terminal Not Found",
-        "Could not automatically launch a terminal window.\n"
-        "Please ensure a standard terminal is installed (e.g., konsole, gnome-terminal, xterm)."
-    )
+    # Notice: We changed messagebox to a print/exception here as this function
+    # might run outside the main GUI context, but a QMessageBox is safer if in the main thread.
+    print("Error: Could not automatically launch a terminal window.")
 
 
-class KziGeneratorApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Kazeta Cartridge Generator")
+# --- Background Worker for Downloading ---
+class DownloadWorker(QThread):
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
 
-        main_frame = tk.Frame(root, padx=10, pady=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+    def __init__(self, url, save_path):
+        super().__init__()
+        self.url = url
+        self.save_path = save_path
+
+    def run(self):
+        try:
+            with urllib.request.urlopen(self.url, context=ssl_context) as response, open(self.save_path, 'wb') as out_file:
+                total_size = int(response.getheader('Content-Length', 0))
+                downloaded = 0
+                start_time = time.time()
+
+                while True:
+                    buffer = response.read(1024 * 1024)
+                    if not buffer:
+                        break
+
+                    out_file.write(buffer)
+                    downloaded += len(buffer)
+
+                    percent = int((downloaded / total_size) * 100) if total_size > 0 else 0
+                    elapsed_time = time.time() - start_time
+                    speed = (downloaded / elapsed_time) / (1024 * 1024) if elapsed_time > 0 else 0
+
+                    status_text = (
+                        f"{downloaded/1024/1024:.2f} MB / {total_size/1024/1024:.2f} MB "
+                        f"({percent}%) at {speed:.2f} MB/s"
+                    )
+                    self.progress.emit(percent, status_text)
+
+            self.finished.emit(self.save_path)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class KziGeneratorApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Kazeta Cartridge Generator")
+        self.resize(850, 850)
+
+        # Get the absolute path to where the script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(script_dir, "icon.png") # Change to your actual icon filename
+
+        self.setWindowIcon(QIcon(icon_path))
 
         self.runtime_urls = {
             "Linux": "https://runtimes.kazeta.org/linux-1.0.kzr",
@@ -111,79 +151,200 @@ class KziGeneratorApp:
             "GameCube/Wii": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/dolphin-1.0.kzr",
         }
 
-        # --- Variable setup ---
-        self.game_name_var = tk.StringVar()
-        self.game_id_var = tk.StringVar()
-        self.exec_path_var = tk.StringVar()
-        self.params_var = tk.StringVar()
-        self.icon_path_var = tk.StringVar()
-        self.gamescope_var = tk.StringVar()
-        self.proton_path_var = tk.StringVar()
-        self.dpad_fix_var = tk.BooleanVar(value=False)
-        self.default_game_var = tk.BooleanVar(value=False)
+        self.setup_ui()
+        self.setup_menus()
+        self.connect_signals()
+        self._update_preview()
 
+    def setup_ui(self):
+        # Central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+
+        # --- Form Layout for Inputs ---
+        form_layout = QFormLayout()
+
+        self.game_name_entry = QLineEdit()
+        form_layout.addRow("Game Name:", self.game_name_entry)
+
+        self.game_id_entry = QLineEdit()
+        form_layout.addRow("Game ID:", self.game_id_entry)
+
+        # Executable Path Row
+        exec_layout = QHBoxLayout()
+        self.exec_path_entry = QLineEdit()
+        self.btn_browse_exec = QPushButton("Browse...")
+        exec_layout.addWidget(self.exec_path_entry)
+        exec_layout.addWidget(self.btn_browse_exec)
+        form_layout.addRow("Executable Path:", exec_layout)
+
+        self.params_entry = QLineEdit()
+        form_layout.addRow("Additional Parameters:", self.params_entry)
+
+        # Icon Path Row
+        icon_layout = QHBoxLayout()
+        self.icon_path_entry = QLineEdit()
+        self.btn_browse_icon = QPushButton("Browse...")
+        self.btn_fetch_icon = QPushButton("Fetch from SteamGridDB")
+        icon_layout.addWidget(self.icon_path_entry)
+        icon_layout.addWidget(self.btn_browse_icon)
+        icon_layout.addWidget(self.btn_fetch_icon)
+        form_layout.addRow("Icon Path:", icon_layout)
+
+        self.gamescope_entry = QLineEdit()
+        form_layout.addRow("Gamescope Options:", self.gamescope_entry)
+
+        self.runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
+        self.runtime_menu = QComboBox()
+        self.runtime_menu.addItems(self.runtime_options)
+        form_layout.addRow("Runtime:", self.runtime_menu)
+
+        # Proton Path Row
+        proton_layout = QHBoxLayout()
+        self.proton_path_entry = QLineEdit()
+        self.btn_browse_proton = QPushButton("Browse...")
+        proton_layout.addWidget(self.proton_path_entry)
+        proton_layout.addWidget(self.btn_browse_proton)
+        form_layout.addRow("Proton/Wine Path:", proton_layout)
+
+        main_layout.addLayout(form_layout)
+
+        # Checkboxes
+        self.dpad_fix_checkbox = QCheckBox("Enable D-Pad reversal fix for native Linux games (Kazeta+ only)")
+        self.default_game_checkbox = QCheckBox("Set as the default game (for multi-carts, Kazeta+ only)")
+        main_layout.addWidget(self.dpad_fix_checkbox)
+        main_layout.addWidget(self.default_game_checkbox)
+
+        # --- Download Section ---
+        download_group = QGroupBox("Download runtimes")
+        download_layout = QVBoxLayout(download_group)
+
+        runtime_categories = {
+            "Linux": ["Linux", "Linux 1.1"],
+            "Windows": ["Windows", "Windows 1.1", "Windows 1.2 (Experimental)"],
+            "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
+        }
+
+        for category, runtimes in runtime_categories.items():
+            row_layout = QHBoxLayout()
+            label = QLabel(f"{category}:")
+            label.setFixedWidth(100)
+            row_layout.addWidget(label)
+
+            for r_name in runtimes:
+                btn = QPushButton(r_name)
+                # Using lambda with default argument to capture the current value of r_name
+                btn.clicked.connect(lambda checked, name=r_name: self.download_runtime(name))
+                row_layout.addWidget(btn)
+
+            row_layout.addStretch() # Push buttons to the left
+            download_layout.addLayout(row_layout)
+
+        main_layout.addWidget(download_group)
+
+        # --- Preview Section ---
+        preview_group = QGroupBox("KZI File Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        preview_layout.addWidget(self.preview_text)
+        main_layout.addWidget(preview_group)
+
+        # --- Bottom Bar ---
+        bottom_layout = QHBoxLayout()
+        self.btn_load = QPushButton("Load .kzi File")
+        self.btn_unload = QPushButton("Unload Cartridge")
+        self.btn_test = QPushButton("Test Cartridge")
+        self.btn_generate = QPushButton("Generate .kzi File")
+
+        bottom_layout.addWidget(self.btn_load)
+        bottom_layout.addWidget(self.btn_unload)
+        bottom_layout.addStretch() # Acts as a spacer
+        bottom_layout.addWidget(self.btn_test)
+        bottom_layout.addWidget(self.btn_generate)
+
+        main_layout.addLayout(bottom_layout)
+
+    def setup_menus(self):
+        menubar = self.menuBar()
+
+        # File Menu
+        file_menu = menubar.addMenu("File")
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # Functions Menu
+        func_menu = menubar.addMenu("Functions")
+
+        erofs_action = QAction("Create Runtime/Game Package", self)
+        erofs_action.triggered.connect(self.open_erofs_manager)
+        func_menu.addAction(erofs_action)
+
+        iso_action = QAction("Create Optical Media (Kazeta+)", self)
+        iso_action.triggered.connect(self.open_iso_burner)
+        func_menu.addAction(iso_action)
+
+        theme_action = QAction("Create Theme (Kazeta+)", self)
+        theme_action.triggered.connect(self.open_theme_creator)
+        func_menu.addAction(theme_action)
+
+        # Help Menu
+        help_menu = menubar.addMenu("Help")
+
+        github_action = QAction("KZI Cartridge Generator GitHub", self)
+        github_action.triggered.connect(lambda: webbrowser.open("https://github.com/the-outcaster/kzi-cartridge-generator"))
+        help_menu.addAction(github_action)
+
+        wiki_action = QAction("Kazeta+ Wiki", self)
+        wiki_action.triggered.connect(lambda: webbrowser.open("https://github.com/the-outcaster/kazeta-plus/wiki"))
+        help_menu.addAction(wiki_action)
+
+        about_action = QAction("About", self)
+        about_action.triggered.connect(lambda: show_about_window(self))
+        help_menu.addAction(about_action)
+
+    def connect_signals(self):
         # Traces for live preview update
-        self.game_name_var.trace_add("write", self._update_game_id)
-        self.game_id_var.trace_add("write", self._update_preview_trace)
-        self.exec_path_var.trace_add("write", self._update_preview_trace)
-        self.params_var.trace_add("write", self._update_preview_trace)
-        self.icon_path_var.trace_add("write", self._update_preview_trace)
-        self.gamescope_var.trace_add("write", self._update_preview_trace)
-        self.dpad_fix_var.trace_add("write", self._update_preview_trace)
-        self.default_game_var.trace_add("write", self._update_preview_trace)
+        self.game_name_entry.textChanged.connect(self._update_game_id)
+        self.game_id_entry.textChanged.connect(self._update_preview)
+        self.exec_path_entry.textChanged.connect(self._update_preview)
+        self.params_entry.textChanged.connect(self._update_preview)
+        self.icon_path_entry.textChanged.connect(self._update_preview)
+        self.gamescope_entry.textChanged.connect(self._update_preview)
 
-        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
-        self.runtime_var = tk.StringVar(value=runtime_options[0])
-        self.runtime_var.trace_add("write", self._update_preview_trace)
+        self.runtime_menu.currentTextChanged.connect(self._update_preview)
+        self.dpad_fix_checkbox.stateChanged.connect(self._update_preview)
+        self.default_game_checkbox.stateChanged.connect(self._update_preview)
 
+        # Button clicks
+        self.btn_browse_exec.clicked.connect(self.browse_executable)
+        self.btn_browse_proton.clicked.connect(self.browse_proton)
+        self.btn_browse_icon.clicked.connect(self.browse_icon)
+        self.btn_fetch_icon.clicked.connect(self.start_fetch_icon)
 
-        self.create_widgets(main_frame)
-        self._update_preview() # Initial preview population
+        self.btn_load.clicked.connect(self.load_kzi_file)
+        self.btn_unload.clicked.connect(self.unload_cartridge)
+        self.btn_test.clicked.connect(self.test_cartridge)
+        self.btn_generate.clicked.connect(self.generate_kzi)
 
-    def _update_game_id(self, *args):
-        game_name = self.game_name_var.get()
-        sanitized_id = re.sub(r'[^a-z0-9-]', '', game_name.lower().replace(' ', '-'))
-        if self.game_id_var.get() != sanitized_id:
-             self.game_id_var.set(sanitized_id)
+    def _update_game_id(self, text):
+        sanitized_id = re.sub(r'[^a-z0-9-]', '', text.lower().replace(' ', '-'))
+        if self.game_id_entry.text() != sanitized_id:
+             self.game_id_entry.setText(sanitized_id)
         self._update_preview()
-
-    def _update_preview_trace(self, *args):
-        self._update_preview()
-
-    def _get_preview_relative_path(self, absolute_path):
-        """Generates a representative relative path for the preview."""
-        if not absolute_path:
-            return ""
-        try:
-            media_path_base = get_default_media_path()
-            if absolute_path.startswith(media_path_base):
-                 path_parts = absolute_path.split(os.sep)
-                 username_index = -1
-                 for i, part in enumerate(path_parts):
-                     if part == getpass.getuser() and i > 0 and path_parts[i-1] in ["media", "run"]:
-                         username_index = i
-                         break
-                 if username_index != -1 and username_index + 1 < len(path_parts):
-                      card_name_index = username_index + 1
-                      if card_name_index + 1 < len(path_parts):
-                           relative_part = os.path.join(*path_parts[card_name_index + 1:])
-                           return relative_part
-            return os.path.join(os.path.basename(os.path.dirname(absolute_path)), os.path.basename(absolute_path))
-        except Exception:
-            return os.path.basename(absolute_path)
-
 
     def _get_kzi_content(self, for_preview=False, kzi_save_dir=None):
-        """Helper function to generate KZI content string."""
-        game_name = self.game_name_var.get().strip()
-        game_id = self.game_id_var.get().strip()
-        exec_path = self.exec_path_var.get().strip()
-        params = self.params_var.get().strip()
-        icon_path = self.icon_path_var.get().strip()
-        gamescope_options = self.gamescope_var.get().strip()
-        runtime = self.runtime_var.get()
-        apply_dpad_fix = self.dpad_fix_var.get()
-        set_default = self.default_game_var.get()
+        game_name = self.game_name_entry.text().strip()
+        game_id = self.game_id_entry.text().strip()
+        exec_path = self.exec_path_entry.text().strip()
+        params = self.params_entry.text().strip()
+        icon_path = self.icon_path_entry.text().strip()
+        gamescope_options = self.gamescope_entry.text().strip()
+        runtime = self.runtime_menu.currentText()
+        apply_dpad_fix = self.dpad_fix_checkbox.isChecked()
+        set_default = self.default_game_checkbox.isChecked()
 
         media_path_base = get_default_media_path()
         base_dir = kzi_save_dir if kzi_save_dir else media_path_base
@@ -236,221 +397,67 @@ class KziGeneratorApp:
 
         return "\n".join(content_lines) + "\n"
 
-
     def _update_preview(self):
-        """Updates the content of the preview text box."""
         content = self._get_kzi_content(for_preview=True)
-        self.preview_text.config(state=tk.NORMAL) # Enable writing
-        self.preview_text.delete('1.0', tk.END)
-        self.preview_text.insert('1.0', content)
-        self.preview_text.config(state=tk.DISABLED) # Disable editing
-
-    def create_widgets(self, parent):
-        # --- MENU BAR SETUP ---
-        menubar = tk.Menu(self.root)
-
-        # File Menu
-        file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Exit", command=self.root.quit)
-        menubar.add_cascade(label="File", menu=file_menu)
-
-        # Functions Menu
-        func_menu = tk.Menu(menubar, tearoff=0)
-        func_menu.add_command(label="Create Runtime/Game Package", command=self.open_erofs_manager)
-        func_menu.add_command(label="Create Optical Media (Kazeta+)", command=self.open_iso_burner)
-        func_menu.add_command(label="Create Theme (Kazeta+)", command=self.open_theme_creator)
-        menubar.add_cascade(label="Functions", menu=func_menu)
-
-        # Help Menu
-        help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="KZI Cartridge Generator GitHub", command=lambda: webbrowser.open("https://github.com/the-outcaster/kzi-cartridge-generator"))
-        help_menu.add_command(label="Kazeta+ Wiki", command=lambda: webbrowser.open("https://github.com/the-outcaster/kazeta-plus/wiki"))
-        help_menu.add_command(label="Kazeta Website", command=lambda: webbrowser.open("https://kazeta.org"))
-        help_menu.add_command(label="Kazeta Discord", command=lambda: webbrowser.open("https://discord.gg/JFscNAdzHW"))
-        help_menu.add_separator()
-        help_menu.add_command(label="About", command=lambda: show_about_window(self.root))
-        menubar.add_cascade(label="Help", menu=help_menu)
-
-        self.root.config(menu=menubar)
-
-        # --- MAIN FORM LAYOUT ---
-        parent.columnconfigure(1, weight=1)
-
-        row_index = 0
-        tk.Label(parent, text="Game Name:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        self.game_name_entry = tk.Entry(parent, textvariable=self.game_name_var, width=50)
-        self.game_name_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
-
-        tk.Label(parent, text="Game ID:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        self.game_id_entry = tk.Entry(parent, textvariable=self.game_id_var)
-        self.game_id_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
-
-        tk.Label(parent, text="Executable Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        exec_frame = tk.Frame(parent)
-        exec_frame.grid(row=row_index-1, column=1, sticky="ew")
-        exec_frame.columnconfigure(0, weight=1)
-        self.exec_path_entry = tk.Entry(exec_frame, textvariable=self.exec_path_var)
-        self.exec_path_entry.grid(row=0, column=0, sticky="ew")
-        tk.Button(exec_frame, text="Browse...", command=self.browse_executable).grid(row=0, column=1, padx=(5,0))
-
-        tk.Label(parent, text="Additional Parameters:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        self.params_entry = tk.Entry(parent, textvariable=self.params_var)
-        self.params_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
-
-        tk.Label(parent, text="Icon Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        icon_frame = tk.Frame(parent)
-        icon_frame.grid(row=row_index-1, column=1, sticky="ew")
-        icon_frame.columnconfigure(0, weight=1)
-        self.icon_path_entry = tk.Entry(icon_frame, textvariable=self.icon_path_var)
-        self.icon_path_entry.grid(row=0, column=0, sticky="ew")
-        tk.Button(icon_frame, text="Browse...", command=self.browse_icon).grid(row=0, column=1, padx=(5,2))
-        self.fetch_button = tk.Button(icon_frame, text="Fetch from SteamGridDB", command=self.start_fetch_icon)
-        self.fetch_button.grid(row=0, column=2)
-
-        tk.Label(parent, text="Gamescope Options:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        self.gamescope_entry = tk.Entry(parent, textvariable=self.gamescope_var)
-        self.gamescope_entry.grid(row=row_index-1, column=1, sticky="ew", pady=2)
-
-        tk.Label(parent, text="Runtime:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
-        self.runtime_menu = tk.OptionMenu(parent, self.runtime_var, *runtime_options)
-        self.runtime_menu.grid(row=row_index-1, column=1, sticky="ew", pady=2)
-
-        tk.Label(parent, text="Proton/Wine Path:").grid(row=row_index, column=0, sticky="w", pady=2); row_index += 1
-        proton_frame = tk.Frame(parent)
-        proton_frame.grid(row=row_index-1, column=1, sticky="ew")
-        proton_frame.columnconfigure(0, weight=1)
-        self.proton_path_entry = tk.Entry(proton_frame, textvariable=self.proton_path_var)
-        self.proton_path_entry.grid(row=0, column=0, sticky="ew")
-        tk.Button(proton_frame, text="Browse...", command=self.browse_proton).grid(row=0, column=1, padx=(5,0))
-
-        self.dpad_fix_checkbox = tk.Checkbutton(
-            parent,
-            text="Enable D-Pad reversal fix for native Linux games (Kazeta+ only)",
-            variable=self.dpad_fix_var,
-            command=self._update_preview
-        )
-        self.dpad_fix_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
-
-        self.default_game_checkbox = tk.Checkbutton(
-            parent,
-            text="Set as the default game (for multi-carts, Kazeta+ only)",
-            variable=self.default_game_var,
-            command=self._update_preview
-        )
-        self.default_game_checkbox.grid(row=row_index, column=0, columnspan=2, sticky="w", pady=2); row_index += 1
-
-        # --- UPDATED DOWNLOAD SECTION ---
-        download_frame = tk.LabelFrame(parent, text="Download runtimes", padx=10, pady=5)
-        download_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=10); row_index += 1
-        download_frame.columnconfigure(0, weight=1)
-
-        # Define Categories
-        runtime_categories = {
-            "Linux": ["Linux", "Linux 1.1"],
-            "Windows": ["Windows", "Windows 1.1", "Windows 1.2 (Experimental)"],
-            "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
-        }
-
-        for category, runtimes in runtime_categories.items():
-            row_frame = tk.Frame(download_frame)
-            row_frame.pack(fill=tk.X, pady=2)
-
-            # Label width fixed to keep buttons aligned
-            tk.Label(row_frame, text=f"{category}:", width=10, anchor="w", font=("", 9, "bold")).pack(side=tk.LEFT)
-
-            for r_name in runtimes:
-                tk.Button(row_frame, text=r_name, command=lambda n=r_name: self.download_runtime(n)).pack(side=tk.LEFT, padx=2)
-
-        # --- KZI PREVIEW ---
-        preview_frame = tk.LabelFrame(parent, text="KZI File Preview", padx=10, pady=5)
-        preview_frame.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=5); row_index += 1
-        self.preview_text = scrolledtext.ScrolledText(preview_frame, height=10, wrap=tk.WORD, state=tk.DISABLED)
-        self.preview_text.pack(fill=tk.BOTH, expand=True)
-
-        # --- UPDATED BOTTOM BAR ---
-        bottom_bar = tk.Frame(parent)
-        bottom_bar.grid(row=row_index, column=0, columnspan=2, sticky="ew", pady=(10,0)); row_index += 1
-
-        # Configure columns to push Test/Generate to the right
-        bottom_bar.columnconfigure(2, weight=1)
-
-        tk.Button(bottom_bar, text="Load .kzi File", command=self.load_kzi_file).grid(row=0, column=0, padx=(0, 5))
-        tk.Button(bottom_bar, text="Unload Cartridge", command=self.unload_cartridge).grid(row=0, column=1)
-
-        # Spacer is column 2
-
-        tk.Button(bottom_bar, text="Test Cartridge", command=self.test_cartridge).grid(row=0, column=3, padx=(0, 5))
-        tk.Button(bottom_bar, text="Generate .kzi File", command=self.generate_kzi).grid(row=0, column=4)
+        self.preview_text.setPlainText(content)
 
     def browse_executable(self):
-        filetypes = [
-            ("All files", "*"),
-            ("Windows Executables", "*.exe"),
-            ("Linux Executables", "*.x86_64 *.sh *.AppImage"),
-            ("NES ROMs", "*.nes"),
-            ("SNES ROMs", "*.sfc"),
-            ("Nintendo 64 ROMs", "*.n64 *.z64"),
-            ("Sega Genesis/Mega Drive ROMs", "*.bin"),
-            ("GameCube/Wii ROMs", "*.iso *.gcm *.wbfs *.rvz"),
-        ]
-        filepath = filedialog.askopenfilename(
-            title="Select Executable File",
-            initialdir=get_default_media_path(),
-            filetypes=filetypes
+        # PyQt6 uses a single string for filters
+        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select Executable File", get_default_media_path(), file_filter
         )
         if filepath:
-            self.exec_path_var.set(filepath)
+            self.exec_path_entry.setText(filepath)
 
     def browse_proton(self):
-        filepath = filedialog.askopenfilename(
-            title="Select Proton/Wine Executable",
-            initialdir=os.path.expanduser("~/.steam/root/compatibilitytools.d")
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select Proton/Wine Executable", os.path.expanduser("~/.steam/root/compatibilitytools.d")
         )
         if filepath:
-            self.proton_path_var.set(filepath)
+            self.proton_path_entry.setText(filepath)
 
     def browse_icon(self):
-        filepath = filedialog.askopenfilename(
-            title="Select Icon File",
-            initialdir=get_default_media_path(),
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        file_filter = "PNG files (*.png);;All files (*.*)"
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select Icon File", get_default_media_path(), file_filter
         )
         if filepath:
-            self.icon_path_var.set(filepath)
+            self.icon_path_entry.setText(filepath)
 
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
 
     def open_theme_creator(self):
-        KazetaThemeCreator(self.root)
+        dialog = KazetaThemeCreator(self)
+        dialog.exec()
 
     def open_erofs_manager(self):
-        ErofsManagerWindow(self.root)
+        dialog = ErofsManagerWindow(self)
+        dialog.exec()
 
     def open_iso_burner(self):
-        # Pass self._get_kzi_content so the burner window can generate
-        # the KZI file content based on the main window's current state.
-        IsoBurnerWindow(self.root)
+        dialog = IsoBurnerWindow(self)
+        dialog.exec()
 
     def test_cartridge(self):
-        exec_path = self.exec_path_var.get().strip()
-        params = self.params_var.get().strip()
-        runtime = self.runtime_var.get()
-        proton_path = self.proton_path_var.get().strip()
+        exec_path = self.exec_path_entry.text().strip()
+        params = self.params_entry.text().strip()
+        runtime = self.runtime_menu.currentText()
+        proton_path = self.proton_path_entry.text().strip()
         env = None
 
         if not exec_path:
-            messagebox.showerror("Error", "Executable Path must be specified.")
+            QMessageBox.critical(self, "Error", "Executable Path must be specified.")
             return
 
         work_dir = os.path.dirname(exec_path)
 
         if is_steam_running():
-            messagebox.showwarning("Steam is Running", "Please close Steam before testing.")
+            QMessageBox.warning(self, "Steam is Running", "Please close Steam before testing.")
 
         command = []
-        if runtime == "windows" or runtime == "windows-1.1" or runtime == "windows-1.2":
+        if runtime in ["windows", "windows-1.1", "windows-1.2"]:
             if proton_path:
                 command.extend([proton_path, "run"])
                 env = os.environ.copy()
@@ -468,11 +475,11 @@ class KziGeneratorApp:
                 if steam_client_path:
                     env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = steam_client_path
                 else:
-                    messagebox.showwarning("Steam Not Found", "Could not find Steam installation path. Proton may fail.")
+                    QMessageBox.warning(self, "Steam Not Found", "Could not find Steam installation path. Proton may fail.")
             else:
                 command.append("wine")
         elif runtime not in ["none", "linux", "linux-1.1"]:
-            messagebox.showerror("Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
+            QMessageBox.critical(self, "Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
             return
 
         full_command_string = exec_path
@@ -482,43 +489,41 @@ class KziGeneratorApp:
         try:
              command.extend(shlex.split(full_command_string))
         except ValueError as e:
-             messagebox.showerror("Parsing Error", f"Error parsing executable or parameters:\n{e}")
+             QMessageBox.critical(self, "Parsing Error", f"Error parsing executable or parameters:\n{e}")
              return
 
         run_command_in_new_terminal(command, env=env, cwd=work_dir)
 
     def generate_kzi(self):
-        game_id = self.game_id_var.get().strip()
-        exec_path = self.exec_path_var.get().strip()
-        runtime = self.runtime_var.get()
-        apply_dpad_fix = self.dpad_fix_var.get()
+        game_id = self.game_id_entry.text().strip()
+        exec_path = self.exec_path_entry.text().strip()
+        runtime = self.runtime_menu.currentText()
+        apply_dpad_fix = self.dpad_fix_checkbox.isChecked()
         media_path_base = get_default_media_path()
 
-        if not all([self.game_name_var.get().strip(), game_id, exec_path]):
-             messagebox.showerror("Error", "Game Name, ID, and Executable Path are required.")
+        if not all([self.game_name_entry.text().strip(), game_id, exec_path]):
+             QMessageBox.critical(self, "Error", "Game Name, ID, and Executable Path are required.")
              return
 
         if not re.match(r'^[a-z0-9-]+$', game_id):
-             messagebox.showerror("Invalid ID", "The 'Game ID' field can only contain lowercase letters, numbers, and hyphens.")
+             QMessageBox.critical(self, "Invalid ID", "The 'Game ID' field can only contain lowercase letters, numbers, and hyphens.")
              return
 
         if apply_dpad_fix and runtime not in ["none", "linux", "linux-1.1"]:
-            proceed = messagebox.askyesno(
-                "Confirm D-Pad Fix",
+            reply = QMessageBox.question(
+                self, "Confirm D-Pad Fix",
                 "The D-Pad reversal fix is usually only needed for native Linux games.\n"
                 f"Your selected runtime is '{runtime}'.\n\n"
                 "Do you still want to include the fix in the .kzi file?",
-                icon='warning'
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
-            if not proceed:
+            if reply == QMessageBox.StandardButton.No:
                 return
 
-        kzi_filepath = filedialog.asksaveasfilename(
-            defaultextension=".kzi",
-            filetypes=[("Kazeta Info files", "*.kzi")],
-            initialdir=media_path_base,
-            initialfile=f"{game_id}.kzi",
-            title="Save .kzi File"
+        kzi_filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save .kzi File",
+            os.path.join(media_path_base, f"{game_id}.kzi"),
+            "Kazeta Info files (*.kzi)"
         )
         if not kzi_filepath:
             return
@@ -530,15 +535,13 @@ class KziGeneratorApp:
             with open(kzi_filepath, "w") as f:
                 f.write(content)
 
-            messagebox.showinfo("Success", f"Successfully generated {os.path.basename(kzi_filepath)}")
+            QMessageBox.information(self, "Success", f"Successfully generated {os.path.basename(kzi_filepath)}")
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
     def load_kzi_file(self):
-        kzi_filepath = filedialog.askopenfilename(
-            title="Load .kzi File",
-            initialdir=get_default_media_path(),
-            filetypes=((".kzi files", "*.kzi"), ("All files", "*.*"))
+        kzi_filepath, _ = QFileDialog.getOpenFileName(
+            self, "Load .kzi File", get_default_media_path(), ".kzi files (*.kzi);;All files (*.*)"
         )
         if not kzi_filepath:
             return
@@ -547,7 +550,6 @@ class KziGeneratorApp:
 
         try:
             kzi_dir = os.path.dirname(kzi_filepath)
-
             parsed_data = {}
             with open(kzi_filepath, 'r') as f:
                 for line in f:
@@ -555,14 +557,18 @@ class KziGeneratorApp:
                         key, value = line.strip().split('=', 1)
                         parsed_data[key.lower()] = value
 
-            self.game_name_var.set(parsed_data.get('name', ''))
-            self.game_id_var.set(parsed_data.get('id', ''))
-            self.gamescope_var.set(parsed_data.get('gamescopeoptions', ''))
-            self.runtime_var.set(parsed_data.get('runtime', 'none'))
+            self.game_name_entry.setText(parsed_data.get('name', ''))
+            self.game_id_entry.setText(parsed_data.get('id', ''))
+            self.gamescope_entry.setText(parsed_data.get('gamescopeoptions', ''))
+
+            runtime_val = parsed_data.get('runtime', 'none')
+            idx = self.runtime_menu.findText(runtime_val)
+            if idx >= 0:
+                self.runtime_menu.setCurrentIndex(idx)
 
             if 'icon' in parsed_data and parsed_data['icon']:
                 icon_full_path = os.path.abspath(os.path.join(kzi_dir, parsed_data['icon']))
-                self.icon_path_var.set(icon_full_path)
+                self.icon_path_entry.setText(icon_full_path)
 
             if 'exec' in parsed_data and parsed_data['exec']:
                 value = parsed_data['exec']
@@ -574,93 +580,92 @@ class KziGeneratorApp:
                     potential_path = os.path.abspath(os.path.join(kzi_dir, path_part))
 
                     if os.path.exists(potential_path):
-                        self.exec_path_var.set(potential_path)
+                        self.exec_path_entry.setText(potential_path)
                     elif shutil.which(path_part):
-                        self.exec_path_var.set(path_part)
+                        self.exec_path_entry.setText(path_part)
                     else:
-                        self.exec_path_var.set(path_part)
+                        self.exec_path_entry.setText(path_part)
 
-                    self.params_var.set(params)
+                    self.params_entry.setText(params)
 
             if 'preexec' in parsed_data and 'postexec' in parsed_data:
                  if "dpad-fix" in parsed_data['preexec']:
-                      self.dpad_fix_var.set(True)
+                      self.dpad_fix_checkbox.setChecked(True)
 
             if 'setasdefaultgame' in parsed_data:
-                self.default_game_var.set(parsed_data['setasdefaultgame'].lower() == 'true')
-
-
-            self._update_preview()
+                self.default_game_checkbox.setChecked(parsed_data['setasdefaultgame'].lower() == 'true')
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load .kzi file: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load .kzi file: {e}")
 
     def unload_cartridge(self):
-        """Clears all input fields in the UI."""
-        for var in [self.game_name_var, self.game_id_var, self.exec_path_var,
-                      self.params_var, self.icon_path_var, self.gamescope_var, self.proton_path_var]:
-            var.set("")
-        self.runtime_var.set("none")
-        self.dpad_fix_var.set(False)
-        self.default_game_var.set(False)
-        self._update_preview() # Clear preview too
+        # Disconnect signals temporarily so we don't trigger multiple preview updates
+        self.game_id_entry.blockSignals(True)
 
+        self.game_name_entry.clear()
+        self.game_id_entry.clear()
+        self.exec_path_entry.clear()
+        self.params_entry.clear()
+        self.icon_path_entry.clear()
+        self.gamescope_entry.clear()
+        self.proton_path_entry.clear()
+
+        self.runtime_menu.setCurrentIndex(0)
+        self.dpad_fix_checkbox.setChecked(False)
+        self.default_game_checkbox.setChecked(False)
+
+        self.game_id_entry.blockSignals(False)
+        self._update_preview()
 
     def download_runtime(self, name):
         url = self.runtime_urls[name]
         filename = os.path.basename(url)
-        save_path = filedialog.asksaveasfilename(initialfile=filename, title=f"Save {name} Runtime")
+        save_path, _ = QFileDialog.getSaveFileName(self, f"Save {name} Runtime", filename)
+
         if not save_path:
             return
 
-        thread = threading.Thread(target=self._download_worker, args=(url, save_path), daemon=True)
-        thread.start()
+        # Create a progress dialog
+        self.progress_dialog = QDialog(self)
+        self.progress_dialog.setWindowTitle("Downloading...")
+        self.progress_dialog.setFixedSize(450, 150)
+        layout = QVBoxLayout(self.progress_dialog)
 
-    def _download_worker(self, url, save_path):
-        progress_window = tk.Toplevel(self.root)
-        progress_window.title("Downloading...")
-        progress_window.transient(self.root)
-        progress_window.grab_set()
+        self.status_label = QLabel("Starting download...", self.progress_dialog)
+        layout.addWidget(self.status_label)
 
-        status_var = tk.StringVar()
-        tk.Label(progress_window, textvariable=status_var, width=50).pack(pady=10, padx=20)
-        progress_bar = tk.ttk.Progressbar(progress_window, orient="horizontal", length=400, mode="determinate")
-        progress_bar.pack(pady=10, fill=tk.X, expand=True, padx=20)
+        self.progress_bar = QProgressBar(self.progress_dialog)
+        self.progress_bar.setRange(0, 100)
+        layout.addWidget(self.progress_bar)
 
-        try:
-            with urllib.request.urlopen(url, context=ssl_context) as response, open(save_path, 'wb') as out_file:
-                total_size = int(response.getheader('Content-Length', 0))
-                downloaded = 0
-                start_time = time.time()
+        # Setup the worker thread
+        self.worker = DownloadWorker(url, save_path)
+        self.worker.progress.connect(self.update_download_progress)
+        self.worker.finished.connect(self.download_finished)
+        self.worker.error.connect(self.download_error)
 
-                while True:
-                    buffer = response.read(1024 * 1024)
-                    if not buffer:
-                        break
+        self.worker.start()
+        self.progress_dialog.exec()
 
-                    out_file.write(buffer)
-                    downloaded += len(buffer)
+    def update_download_progress(self, percent, status_text):
+        self.progress_bar.setValue(percent)
+        self.status_label.setText(status_text)
 
-                    percent = (downloaded / total_size) * 100 if total_size > 0 else 0
-                    elapsed_time = time.time() - start_time
-                    speed = (downloaded / elapsed_time) / (1024 * 1024) if elapsed_time > 0 else 0
+    def download_finished(self, save_path):
+        self.progress_dialog.accept()
+        QMessageBox.information(self, "Download Complete", f"Successfully downloaded {os.path.basename(save_path)}")
 
-                    status_text = (
-                        f"{downloaded/1024/1024:.2f} MB / {total_size/1024/1024:.2f} MB "
-                        f"({percent:.1f}%) at {speed:.2f} MB/s"
-                    )
+    def download_error(self, error_msg):
+        self.progress_dialog.reject()
+        QMessageBox.critical(self, "Download Failed", f"An error occurred: {error_msg}")
 
-                    progress_bar['value'] = percent
-                    status_var.set(status_text)
-                    progress_window.update_idletasks()
-
-            progress_window.destroy()
-            messagebox.showinfo("Download Complete", f"Successfully downloaded {os.path.basename(save_path)}")
-        except Exception as e:
-            progress_window.destroy()
-            messagebox.showerror("Download Failed", f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = KziGeneratorApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+
+    # Optional: Set a global style if you like
+    # app.setStyle("Fusion")
+
+    window = KziGeneratorApp()
+    window.show()
+    sys.exit(app.exec())
