@@ -128,7 +128,7 @@ class KziGeneratorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kazeta Cartridge Generator")
-        self.resize(850, 750)
+        self.setMinimumWidth(650)
 
         # Apply Wayland Fallback Icon
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -282,6 +282,7 @@ class KziGeneratorApp(QMainWindow):
         preview_layout = QVBoxLayout(preview_group)
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
+        self.preview_text.setMinimumHeight(150) # Forces the window to grow instead of squishing this box
         preview_layout.addWidget(self.preview_text)
         main_layout.addWidget(preview_group)
 
@@ -369,8 +370,8 @@ class KziGeneratorApp(QMainWindow):
         self.default_game_checkbox.stateChanged.connect(self._update_preview)
 
         # UI Toggles
-        self.advanced_toggle.toggled.connect(self.advanced_widget.setVisible)
-        self.kazeta_plus_toggle.toggled.connect(self.kazeta_plus_widget.setVisible)
+        self.advanced_toggle.toggled.connect(self.toggle_advanced_options)
+        self.kazeta_plus_toggle.toggled.connect(self.toggle_kazeta_options)
 
         # Button clicks
         self.btn_browse_exec.clicked.connect(self.browse_executable)
@@ -383,6 +384,20 @@ class KziGeneratorApp(QMainWindow):
         self.btn_unload.clicked.connect(self.unload_cartridge)
         self.btn_test.clicked.connect(self.test_cartridge)
         self.btn_generate.clicked.connect(self.generate_kzi)
+
+    def toggle_advanced_options(self, checked):
+        self.advanced_widget.setVisible(checked)
+        self.adjust_window_height()
+
+    def toggle_kazeta_options(self, checked):
+        self.kazeta_plus_widget.setVisible(checked)
+        self.adjust_window_height()
+
+    def adjust_window_height(self):
+        # Force Qt to immediately process the visibility changes
+        QApplication.processEvents()
+        # Resize the window to its new minimum required height, keeping the current width
+        self.resize(self.width(), self.minimumSizeHint().height())
 
     def _update_game_id(self, text):
         sanitized_id = re.sub(r'[^a-z0-9-]', '', text.lower().replace(' ', '-'))
