@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon, QFont
+from PyQt6.QtGui import QAction, QIcon
 
 # Import from our other modules
 from about_window import show_about_window
@@ -128,7 +128,7 @@ class KziGeneratorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kazeta Cartridge Generator")
-        self.resize(850, 800)
+        self.resize(850, 750)
 
         # Apply Wayland Fallback Icon
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -199,10 +199,10 @@ class KziGeneratorApp(QMainWindow):
         toggles_layout.addWidget(self.advanced_toggle)
 
         self.kazeta_plus_toggle = QCheckBox("Show Kazeta+ Options")
-        self.kazeta_plus_toggle.setStyleSheet("font-weight: bold; margin-top: 10px; color: #a86a11;") # Give it a slight color to stand out
+        self.kazeta_plus_toggle.setStyleSheet("font-weight: bold; margin-top: 10px; color: #a86a11;")
         toggles_layout.addWidget(self.kazeta_plus_toggle)
 
-        toggles_layout.addStretch() # Push checkboxes to the left
+        toggles_layout.addStretch()
         main_layout.addLayout(toggles_layout)
 
         # --- Advanced Options Widget (Hidden by default) ---
@@ -244,7 +244,7 @@ class KziGeneratorApp(QMainWindow):
         self.kazeta_plus_widget.setVisible(False)
         main_layout.addWidget(self.kazeta_plus_widget)
 
-        # --- Download Section ---
+        # --- UPDATED: Download Section with Dropdowns ---
         download_group = QGroupBox("Download runtimes")
         download_layout = QVBoxLayout(download_group)
 
@@ -256,14 +256,21 @@ class KziGeneratorApp(QMainWindow):
 
         for category, runtimes in runtime_categories.items():
             row_layout = QHBoxLayout()
+
             label = QLabel(f"{category}:")
-            label.setFixedWidth(100)
+            label.setFixedWidth(80) # Cleanly align the labels
             row_layout.addWidget(label)
 
-            for r_name in runtimes:
-                btn = QPushButton(r_name)
-                btn.clicked.connect(lambda checked, name=r_name: self.download_runtime(name))
-                row_layout.addWidget(btn)
+            combo = QComboBox()
+            combo.addItems(runtimes)
+            combo.setFixedWidth(220) # Uniform dropdown width
+            row_layout.addWidget(combo)
+
+            btn = QPushButton("Download")
+            btn.setFixedWidth(100)
+            # Use a lambda default argument (c=combo) to capture the specific combobox for this row!
+            btn.clicked.connect(lambda checked, c=combo: self.download_runtime(c.currentText()))
+            row_layout.addWidget(btn)
 
             row_layout.addStretch()
             download_layout.addLayout(row_layout)
@@ -294,12 +301,11 @@ class KziGeneratorApp(QMainWindow):
         main_layout.addLayout(bottom_layout)
 
     def populate_runtime_dropdown(self):
-        """Creates a categorized dropdown. Items are stored as (Display Name, Raw Value)."""
         def add_category_header(title):
             self.runtime_menu.addItem(title)
             idx = self.runtime_menu.count() - 1
             item = self.runtime_menu.model().item(idx)
-            item.setEnabled(False) # Makes it unselectable
+            item.setEnabled(False)
             font = item.font()
             font.setBold(True)
             item.setFont(font)
@@ -439,7 +445,6 @@ class KziGeneratorApp(QMainWindow):
             content_lines.append(f"Runtime={runtime}")
 
         if controller_profile:
-            # We only write the filename, not the absolute path, to the KZI output
             controller_name = os.path.basename(controller_profile)
             content_lines.append(f"Controller={controller_name}")
 
@@ -453,7 +458,7 @@ class KziGeneratorApp(QMainWindow):
         self.preview_text.setPlainText(content)
 
     def browse_executable(self):
-        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;Dreamcast ROMs (*.chd *.cue *.gdi);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
+        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
         filepath, _ = QFileDialog.getOpenFileName(
             self, "Select Executable File", get_default_media_path(), file_filter
         )
