@@ -70,11 +70,25 @@ def run_command_in_new_terminal(command_list, env=None, cwd=None):
         ('xterm',          '-e'),
     ]
 
+    # --- THE FIX: Clean the environment to prevent LD_LIBRARY_PATH poisoning ---
+    clean_env = env.copy() if env else os.environ.copy()
+
+    # AppImage and PyInstaller save the original paths with an "_ORIG" suffix.
+    # We restore the original paths (or delete the overrides) before launching the host terminal.
+    for key in ['LD_LIBRARY_PATH', 'QT_PLUGIN_PATH']:
+        orig_key = f"{key}_ORIG"
+        if orig_key in clean_env:
+            clean_env[key] = clean_env[orig_key]
+        elif key in clean_env:
+            del clean_env[key]
+    # -------------------------------------------------------------------------
+
     for term, flag in terminals:
         if shutil.which(term):
             try:
                 final_command = [term, flag, 'bash', '-c', wrapper_script]
-                subprocess.Popen(final_command, env=env)
+                # Pass the sanitized environment to the child process
+                subprocess.Popen(final_command, env=clean_env)
                 return
             except Exception as e:
                 print(f"Warning: Failed to launch with {term}: {e}")
