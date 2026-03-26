@@ -146,6 +146,7 @@ class KziGeneratorApp(QMainWindow):
             "SNES": "https://runtimes.kazeta.org/snes-1.0.kzr",
             "Sega Genesis/Mega Drive": "https://runtimes.kazeta.org/megadrive-1.1.kzr",
             "Nintendo 64": "https://runtimes.kazeta.org/nintendo64-1.0.kzr",
+            "Dreamcast": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/dreamcast-1.0.kzr",
             "GameCube/Wii": "https://github.com/the-outcaster/kazeta-plus/releases/download/runtimes/dolphin-1.0.kzr",
         }
 
@@ -250,7 +251,7 @@ class KziGeneratorApp(QMainWindow):
         runtime_categories = {
             "Linux": ["Linux", "Linux 1.1"],
             "Windows": ["Windows", "Windows 1.1", "Windows 1.2 (Experimental)"],
-            "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "GameCube/Wii"]
+            "Emulators": ["NES", "SNES", "Sega Genesis/Mega Drive", "Nintendo 64", "Dreamcast", "GameCube/Wii"]
         }
 
         for category, runtimes in runtime_categories.items():
@@ -322,15 +323,11 @@ class KziGeneratorApp(QMainWindow):
         self.runtime_menu.addItem("SNES", "snes")
         self.runtime_menu.addItem("Sega Genesis / Mega Drive", "megadrive")
         self.runtime_menu.addItem("Nintendo 64", "nintendo64")
+        self.runtime_menu.addItem("Dreamcast", "dreamcast")
         self.runtime_menu.addItem("GameCube / Wii (Dolphin)", "dolphin")
 
     def setup_menus(self):
         menubar = self.menuBar()
-
-        file_menu = menubar.addMenu("File")
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
 
         func_menu = menubar.addMenu("Functions")
 
@@ -347,14 +344,6 @@ class KziGeneratorApp(QMainWindow):
         func_menu.addAction(theme_action)
 
         help_menu = menubar.addMenu("Help")
-
-        github_action = QAction("KZI Cartridge Generator GitHub", self)
-        github_action.triggered.connect(lambda: webbrowser.open("https://github.com/the-outcaster/kzi-cartridge-generator"))
-        help_menu.addAction(github_action)
-
-        wiki_action = QAction("Kazeta+ Wiki", self)
-        wiki_action.triggered.connect(lambda: webbrowser.open("https://github.com/the-outcaster/kazeta-plus/wiki"))
-        help_menu.addAction(wiki_action)
 
         about_action = QAction("About", self)
         about_action.triggered.connect(lambda: show_about_window(self))
@@ -464,7 +453,7 @@ class KziGeneratorApp(QMainWindow):
         self.preview_text.setPlainText(content)
 
     def browse_executable(self):
-        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
+        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;Dreamcast ROMs (*.chd *.cue *.gdi);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
         filepath, _ = QFileDialog.getOpenFileName(
             self, "Select Executable File", get_default_media_path(), file_filter
         )
