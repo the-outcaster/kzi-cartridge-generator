@@ -96,7 +96,14 @@ class DownloadWorker(QThread):
 
     def run(self):
         try:
-            with urllib.request.urlopen(self.url, context=ssl_context) as response, open(self.save_path, 'wb') as out_file:
+            # Spoof a standard web browser to bypass 403 CDN blocks
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            req = urllib.request.Request(self.url, headers=headers)
+
+            # Pass the 'req' object instead of the raw string 'self.url'
+            with urllib.request.urlopen(req, context=ssl_context) as response, open(self.save_path, 'wb') as out_file:
                 total_size = int(response.getheader('Content-Length', 0))
                 downloaded = 0
                 start_time = time.time()
