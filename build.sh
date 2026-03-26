@@ -2,7 +2,7 @@
 clear
 
 APPLICATION_DIR="$HOME/Applications"
-VERSION="2.0"
+VERSION="2.1"
 
 mkdir -p $APPLICATION_DIR
 mkdir -p $APPLICATION_DIR/KziCartridgeGenerator.AppDir
