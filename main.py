@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QFont
 
 # Import from our other modules
 from about_window import show_about_window
@@ -80,8 +80,6 @@ def run_command_in_new_terminal(command_list, env=None, cwd=None):
                 print(f"Warning: Failed to launch with {term}: {e}")
                 continue
 
-    # Notice: We changed messagebox to a print/exception here as this function
-    # might run outside the main GUI context, but a QMessageBox is safer if in the main thread.
     print("Error: Could not automatically launch a terminal window.")
 
 
@@ -130,13 +128,13 @@ class KziGeneratorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kazeta Cartridge Generator")
-        self.resize(850, 850)
+        self.resize(850, 800)
 
-        # Get the absolute path to where the script is located
+        # Apply Wayland Fallback Icon
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(script_dir, "icon.png") # Change to your actual icon filename
-
-        self.setWindowIcon(QIcon(icon_path))
+        icon_path = os.path.join(script_dir, "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.runtime_urls = {
             "Linux": "https://runtimes.kazeta.org/linux-1.0.kzr",
@@ -157,12 +155,11 @@ class KziGeneratorApp(QMainWindow):
         self._update_preview()
 
     def setup_ui(self):
-        # Central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # --- Form Layout for Inputs ---
+        # --- Base Form Layout (Always Visible Inputs) ---
         form_layout = QFormLayout()
 
         self.game_name_entry = QLineEdit()
@@ -171,7 +168,6 @@ class KziGeneratorApp(QMainWindow):
         self.game_id_entry = QLineEdit()
         form_layout.addRow("Game ID:", self.game_id_entry)
 
-        # Executable Path Row
         exec_layout = QHBoxLayout()
         self.exec_path_entry = QLineEdit()
         self.btn_browse_exec = QPushButton("Browse...")
@@ -179,10 +175,6 @@ class KziGeneratorApp(QMainWindow):
         exec_layout.addWidget(self.btn_browse_exec)
         form_layout.addRow("Executable Path:", exec_layout)
 
-        self.params_entry = QLineEdit()
-        form_layout.addRow("Additional Parameters:", self.params_entry)
-
-        # Icon Path Row
         icon_layout = QHBoxLayout()
         self.icon_path_entry = QLineEdit()
         self.btn_browse_icon = QPushButton("Browse...")
@@ -192,29 +184,64 @@ class KziGeneratorApp(QMainWindow):
         icon_layout.addWidget(self.btn_fetch_icon)
         form_layout.addRow("Icon Path:", icon_layout)
 
-        self.gamescope_entry = QLineEdit()
-        form_layout.addRow("Gamescope Options:", self.gamescope_entry)
-
-        self.runtime_options = ["none", "linux", "linux-1.1", "windows", "windows-1.1", "windows-1.2", "nes", "snes", "megadrive", "nintendo64", "dolphin"]
         self.runtime_menu = QComboBox()
-        self.runtime_menu.addItems(self.runtime_options)
+        self.populate_runtime_dropdown()
         form_layout.addRow("Runtime:", self.runtime_menu)
 
-        # Proton Path Row
+        main_layout.addLayout(form_layout)
+
+        # --- Option Toggles (Side-by-Side) ---
+        toggles_layout = QHBoxLayout()
+
+        self.advanced_toggle = QCheckBox("Show Advanced Options")
+        self.advanced_toggle.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        toggles_layout.addWidget(self.advanced_toggle)
+
+        self.kazeta_plus_toggle = QCheckBox("Show Kazeta+ Options")
+        self.kazeta_plus_toggle.setStyleSheet("font-weight: bold; margin-top: 10px; color: #a86a11;") # Give it a slight color to stand out
+        toggles_layout.addWidget(self.kazeta_plus_toggle)
+
+        toggles_layout.addStretch() # Push checkboxes to the left
+        main_layout.addLayout(toggles_layout)
+
+        # --- Advanced Options Widget (Hidden by default) ---
+        self.advanced_widget = QWidget()
+        advanced_layout = QFormLayout(self.advanced_widget)
+        advanced_layout.setContentsMargins(0, 5, 0, 5)
+
+        self.params_entry = QLineEdit()
+        advanced_layout.addRow("Additional Parameters:", self.params_entry)
+
+        self.gamescope_entry = QLineEdit()
+        advanced_layout.addRow("Gamescope Options:", self.gamescope_entry)
+
         proton_layout = QHBoxLayout()
         self.proton_path_entry = QLineEdit()
         self.btn_browse_proton = QPushButton("Browse...")
         proton_layout.addWidget(self.proton_path_entry)
         proton_layout.addWidget(self.btn_browse_proton)
-        form_layout.addRow("Proton/Wine Path:", proton_layout)
+        advanced_layout.addRow("Proton/Wine Path:", proton_layout)
 
-        main_layout.addLayout(form_layout)
+        self.advanced_widget.setVisible(False)
+        main_layout.addWidget(self.advanced_widget)
 
-        # Checkboxes
-        self.dpad_fix_checkbox = QCheckBox("Enable D-Pad reversal fix for native Linux games (Kazeta+ only)")
+        # --- Kazeta+ Options Widget (Hidden by default) ---
+        self.kazeta_plus_widget = QWidget()
+        kazeta_plus_layout = QFormLayout(self.kazeta_plus_widget)
+        kazeta_plus_layout.setContentsMargins(0, 0, 0, 10)
+
+        controller_layout = QHBoxLayout()
+        self.controller_profile_entry = QLineEdit()
+        self.btn_browse_controller = QPushButton("Browse...")
+        controller_layout.addWidget(self.controller_profile_entry)
+        controller_layout.addWidget(self.btn_browse_controller)
+        kazeta_plus_layout.addRow("Controller Profile (.yaml):", controller_layout)
+
         self.default_game_checkbox = QCheckBox("Set as the default game (for multi-carts, Kazeta+ only)")
-        main_layout.addWidget(self.dpad_fix_checkbox)
-        main_layout.addWidget(self.default_game_checkbox)
+        kazeta_plus_layout.addRow(self.default_game_checkbox)
+
+        self.kazeta_plus_widget.setVisible(False)
+        main_layout.addWidget(self.kazeta_plus_widget)
 
         # --- Download Section ---
         download_group = QGroupBox("Download runtimes")
@@ -234,11 +261,10 @@ class KziGeneratorApp(QMainWindow):
 
             for r_name in runtimes:
                 btn = QPushButton(r_name)
-                # Using lambda with default argument to capture the current value of r_name
                 btn.clicked.connect(lambda checked, name=r_name: self.download_runtime(name))
                 row_layout.addWidget(btn)
 
-            row_layout.addStretch() # Push buttons to the left
+            row_layout.addStretch()
             download_layout.addLayout(row_layout)
 
         main_layout.addWidget(download_group)
@@ -260,22 +286,52 @@ class KziGeneratorApp(QMainWindow):
 
         bottom_layout.addWidget(self.btn_load)
         bottom_layout.addWidget(self.btn_unload)
-        bottom_layout.addStretch() # Acts as a spacer
+        bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_test)
         bottom_layout.addWidget(self.btn_generate)
 
         main_layout.addLayout(bottom_layout)
 
+    def populate_runtime_dropdown(self):
+        """Creates a categorized dropdown. Items are stored as (Display Name, Raw Value)."""
+        def add_category_header(title):
+            self.runtime_menu.addItem(title)
+            idx = self.runtime_menu.count() - 1
+            item = self.runtime_menu.model().item(idx)
+            item.setEnabled(False) # Makes it unselectable
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+
+        self.runtime_menu.addItem("None", "none")
+        self.runtime_menu.insertSeparator(self.runtime_menu.count())
+
+        add_category_header("--- Linux ---")
+        self.runtime_menu.addItem("Linux 1.0", "linux")
+        self.runtime_menu.addItem("Linux 1.1", "linux-1.1")
+
+        self.runtime_menu.insertSeparator(self.runtime_menu.count())
+        add_category_header("--- Windows ---")
+        self.runtime_menu.addItem("Windows 1.0", "windows")
+        self.runtime_menu.addItem("Windows 1.1", "windows-1.1")
+        self.runtime_menu.addItem("Windows 1.2 (Experimental)", "windows-1.2")
+
+        self.runtime_menu.insertSeparator(self.runtime_menu.count())
+        add_category_header("--- Emulators ---")
+        self.runtime_menu.addItem("NES", "nes")
+        self.runtime_menu.addItem("SNES", "snes")
+        self.runtime_menu.addItem("Sega Genesis / Mega Drive", "megadrive")
+        self.runtime_menu.addItem("Nintendo 64", "nintendo64")
+        self.runtime_menu.addItem("GameCube / Wii (Dolphin)", "dolphin")
+
     def setup_menus(self):
         menubar = self.menuBar()
 
-        # File Menu
         file_menu = menubar.addMenu("File")
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Functions Menu
         func_menu = menubar.addMenu("Functions")
 
         erofs_action = QAction("Create Runtime/Game Package", self)
@@ -290,7 +346,6 @@ class KziGeneratorApp(QMainWindow):
         theme_action.triggered.connect(self.open_theme_creator)
         func_menu.addAction(theme_action)
 
-        # Help Menu
         help_menu = menubar.addMenu("Help")
 
         github_action = QAction("KZI Cartridge Generator GitHub", self)
@@ -313,15 +368,20 @@ class KziGeneratorApp(QMainWindow):
         self.params_entry.textChanged.connect(self._update_preview)
         self.icon_path_entry.textChanged.connect(self._update_preview)
         self.gamescope_entry.textChanged.connect(self._update_preview)
+        self.controller_profile_entry.textChanged.connect(self._update_preview)
 
-        self.runtime_menu.currentTextChanged.connect(self._update_preview)
-        self.dpad_fix_checkbox.stateChanged.connect(self._update_preview)
+        self.runtime_menu.currentIndexChanged.connect(self._update_preview)
         self.default_game_checkbox.stateChanged.connect(self._update_preview)
+
+        # UI Toggles
+        self.advanced_toggle.toggled.connect(self.advanced_widget.setVisible)
+        self.kazeta_plus_toggle.toggled.connect(self.kazeta_plus_widget.setVisible)
 
         # Button clicks
         self.btn_browse_exec.clicked.connect(self.browse_executable)
         self.btn_browse_proton.clicked.connect(self.browse_proton)
         self.btn_browse_icon.clicked.connect(self.browse_icon)
+        self.btn_browse_controller.clicked.connect(self.browse_controller)
         self.btn_fetch_icon.clicked.connect(self.start_fetch_icon)
 
         self.btn_load.clicked.connect(self.load_kzi_file)
@@ -342,8 +402,9 @@ class KziGeneratorApp(QMainWindow):
         params = self.params_entry.text().strip()
         icon_path = self.icon_path_entry.text().strip()
         gamescope_options = self.gamescope_entry.text().strip()
-        runtime = self.runtime_menu.currentText()
-        apply_dpad_fix = self.dpad_fix_checkbox.isChecked()
+        controller_profile = self.controller_profile_entry.text().strip()
+
+        runtime = self.runtime_menu.currentData()
         set_default = self.default_game_checkbox.isChecked()
 
         media_path_base = get_default_media_path()
@@ -385,12 +446,13 @@ class KziGeneratorApp(QMainWindow):
         if gamescope_options:
             content_lines.append(f"GamescopeOptions={gamescope_options}")
 
-        if runtime != "none":
+        if runtime and runtime != "none":
             content_lines.append(f"Runtime={runtime}")
 
-        if apply_dpad_fix:
-            content_lines.append("PreExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/dpad-fix.yaml")
-            content_lines.append("PostExec=busctl call org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/CompositeDevice0 org.shadowblip.Input.CompositeDevice LoadProfilePath \"s\" /usr/share/inputplumber/profiles/default.yaml")
+        if controller_profile:
+            # We only write the filename, not the absolute path, to the KZI output
+            controller_name = os.path.basename(controller_profile)
+            content_lines.append(f"Controller={controller_name}")
 
         if set_default:
             content_lines.append("SetAsDefaultGame=true")
@@ -402,7 +464,6 @@ class KziGeneratorApp(QMainWindow):
         self.preview_text.setPlainText(content)
 
     def browse_executable(self):
-        # PyQt6 uses a single string for filters
         file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
         filepath, _ = QFileDialog.getOpenFileName(
             self, "Select Executable File", get_default_media_path(), file_filter
@@ -425,6 +486,14 @@ class KziGeneratorApp(QMainWindow):
         if filepath:
             self.icon_path_entry.setText(filepath)
 
+    def browse_controller(self):
+        file_filter = "YAML Profiles (*.yaml);;All files (*.*)"
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select Controller Profile", get_default_media_path(), file_filter
+        )
+        if filepath:
+            self.controller_profile_entry.setText(filepath)
+
     def start_fetch_icon(self):
         handle_fetch_icon_flow(self)
 
@@ -443,7 +512,7 @@ class KziGeneratorApp(QMainWindow):
     def test_cartridge(self):
         exec_path = self.exec_path_entry.text().strip()
         params = self.params_entry.text().strip()
-        runtime = self.runtime_menu.currentText()
+        runtime = self.runtime_menu.currentData()
         proton_path = self.proton_path_entry.text().strip()
         env = None
 
@@ -478,7 +547,7 @@ class KziGeneratorApp(QMainWindow):
                     QMessageBox.warning(self, "Steam Not Found", "Could not find Steam installation path. Proton may fail.")
             else:
                 command.append("wine")
-        elif runtime not in ["none", "linux", "linux-1.1"]:
+        elif runtime and runtime not in ["none", "linux", "linux-1.1"]:
             QMessageBox.critical(self, "Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
             return
 
@@ -497,8 +566,6 @@ class KziGeneratorApp(QMainWindow):
     def generate_kzi(self):
         game_id = self.game_id_entry.text().strip()
         exec_path = self.exec_path_entry.text().strip()
-        runtime = self.runtime_menu.currentText()
-        apply_dpad_fix = self.dpad_fix_checkbox.isChecked()
         media_path_base = get_default_media_path()
 
         if not all([self.game_name_entry.text().strip(), game_id, exec_path]):
@@ -508,17 +575,6 @@ class KziGeneratorApp(QMainWindow):
         if not re.match(r'^[a-z0-9-]+$', game_id):
              QMessageBox.critical(self, "Invalid ID", "The 'Game ID' field can only contain lowercase letters, numbers, and hyphens.")
              return
-
-        if apply_dpad_fix and runtime not in ["none", "linux", "linux-1.1"]:
-            reply = QMessageBox.question(
-                self, "Confirm D-Pad Fix",
-                "The D-Pad reversal fix is usually only needed for native Linux games.\n"
-                f"Your selected runtime is '{runtime}'.\n\n"
-                "Do you still want to include the fix in the .kzi file?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
 
         kzi_filepath, _ = QFileDialog.getSaveFileName(
             self, "Save .kzi File",
@@ -562,13 +618,16 @@ class KziGeneratorApp(QMainWindow):
             self.gamescope_entry.setText(parsed_data.get('gamescopeoptions', ''))
 
             runtime_val = parsed_data.get('runtime', 'none')
-            idx = self.runtime_menu.findText(runtime_val)
+            idx = self.runtime_menu.findData(runtime_val)
             if idx >= 0:
                 self.runtime_menu.setCurrentIndex(idx)
 
             if 'icon' in parsed_data and parsed_data['icon']:
                 icon_full_path = os.path.abspath(os.path.join(kzi_dir, parsed_data['icon']))
                 self.icon_path_entry.setText(icon_full_path)
+
+            if 'controller' in parsed_data and parsed_data['controller']:
+                self.controller_profile_entry.setText(parsed_data['controller'])
 
             if 'exec' in parsed_data and parsed_data['exec']:
                 value = parsed_data['exec']
@@ -588,18 +647,20 @@ class KziGeneratorApp(QMainWindow):
 
                     self.params_entry.setText(params)
 
-            if 'preexec' in parsed_data and 'postexec' in parsed_data:
-                 if "dpad-fix" in parsed_data['preexec']:
-                      self.dpad_fix_checkbox.setChecked(True)
-
             if 'setasdefaultgame' in parsed_data:
                 self.default_game_checkbox.setChecked(parsed_data['setasdefaultgame'].lower() == 'true')
+
+            # Expand the toggles if the user loaded a file utilizing them
+            if self.params_entry.text() or self.gamescope_entry.text():
+                self.advanced_toggle.setChecked(True)
+
+            if self.default_game_checkbox.isChecked() or self.controller_profile_entry.text():
+                self.kazeta_plus_toggle.setChecked(True)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load .kzi file: {e}")
 
     def unload_cartridge(self):
-        # Disconnect signals temporarily so we don't trigger multiple preview updates
         self.game_id_entry.blockSignals(True)
 
         self.game_name_entry.clear()
@@ -609,10 +670,12 @@ class KziGeneratorApp(QMainWindow):
         self.icon_path_entry.clear()
         self.gamescope_entry.clear()
         self.proton_path_entry.clear()
+        self.controller_profile_entry.clear()
 
         self.runtime_menu.setCurrentIndex(0)
-        self.dpad_fix_checkbox.setChecked(False)
         self.default_game_checkbox.setChecked(False)
+        self.advanced_toggle.setChecked(False)
+        self.kazeta_plus_toggle.setChecked(False)
 
         self.game_id_entry.blockSignals(False)
         self._update_preview()
@@ -625,7 +688,6 @@ class KziGeneratorApp(QMainWindow):
         if not save_path:
             return
 
-        # Create a progress dialog
         self.progress_dialog = QDialog(self)
         self.progress_dialog.setWindowTitle("Downloading...")
         self.progress_dialog.setFixedSize(450, 150)
@@ -638,7 +700,6 @@ class KziGeneratorApp(QMainWindow):
         self.progress_bar.setRange(0, 100)
         layout.addWidget(self.progress_bar)
 
-        # Setup the worker thread
         self.worker = DownloadWorker(url, save_path)
         self.worker.progress.connect(self.update_download_progress)
         self.worker.finished.connect(self.download_finished)
@@ -662,9 +723,7 @@ class KziGeneratorApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-
-    # Optional: Set a global style if you like
-    # app.setStyle("Fusion")
+    app.setDesktopFileName("kazeta-cartridge-generator.desktop")
 
     window = KziGeneratorApp()
     window.show()
