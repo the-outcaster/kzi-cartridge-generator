@@ -9,7 +9,7 @@ mkdir -p $APPLICATION_DIR/KziCartridgeGenerator.AppDir
 
 echo -e "\nCreating standalone executable..."
 
-pyinstaller --onefile --windowed main.py --distpath $APPLICATION_DIR/KziCartridgeGenerator.AppDir --workpath /tmp/ --specpath /tmp/ --name kzi-cartridge-generator
+pyinstaller --onefile --windowed --add-data "icon.png:." main.py --distpath $APPLICATION_DIR/KziCartridgeGenerator.AppDir --workpath /tmp/ --specpath /tmp/ --name kzi-cartridge-generator
 
 cd $APPLICATION_DIR/KziCartridgeGenerator.AppDir
 

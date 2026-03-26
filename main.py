@@ -29,6 +29,14 @@ from steamgriddb_api import handle_fetch_icon_flow
 from steamgriddb_api import ssl_context
 from theme_creator import KazetaThemeCreator
 
+def get_resource_path(relative_path):
+    """ Get the absolute path to a resource, working for both dev and PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        # Running as a compiled PyInstaller executable
+        return os.path.join(sys._MEIPASS, relative_path)
+    # Running as a normal Python script
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
 def get_default_media_path():
     username = getpass.getuser()
     possible_paths = [f"/run/media/{username}", f"/media/{username}", "/media"]
@@ -152,8 +160,7 @@ class KziGeneratorApp(QMainWindow):
         self.setMinimumWidth(650)
 
         # Apply Wayland Fallback Icon
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(script_dir, "icon.png")
+        icon_path = get_resource_path("icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
