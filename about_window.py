@@ -8,7 +8,9 @@ version = "2.1"
 copyright_year = "2026"
 source_code_link = "https://github.com/the-outcaster/kzi-cartridge-generator"
 kazeta_home_link = "https://kazeta.org/"
-window_dimensions = (480, 300)  # Changed to a tuple for easier unpacking in PyQt
+kazeta_docs = "https://github.com/kazetaos/kazeta/wiki"
+kazeta_plus_docs = "https://github.com/the-outcaster/kazeta-plus/wiki"
+window_dimensions = (500, 300)  # Changed to a tuple for easier unpacking in PyQt
 author = "Linux Gaming Central"
 
 def show_about_window(parent=None):
@@ -43,6 +45,18 @@ def show_about_window(parent=None):
     main_layout.addSpacing(5)
 
     kazeta_label = QLabel(f'Kazeta Home: <a href="{kazeta_home_link}">{kazeta_home_link}</a>')
+    kazeta_label.setOpenExternalLinks(True)
+    main_layout.addWidget(kazeta_label)
+
+    main_layout.addSpacing(5)
+
+    source_label = QLabel(f'Kazeta Documentation: <a href="{kazeta_docs}">{kazeta_docs}</a>')
+    source_label.setOpenExternalLinks(True)
+    main_layout.addWidget(source_label)
+
+    main_layout.addSpacing(5)
+
+    kazeta_label = QLabel(f'Kazeta+ Documentation: <a href="{kazeta_plus_docs}">{kazeta_plus_docs}</a>')
     kazeta_label.setOpenExternalLinks(True)
     main_layout.addWidget(kazeta_label)
 
