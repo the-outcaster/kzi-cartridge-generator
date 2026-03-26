@@ -57,52 +57,62 @@ def is_steam_running():
         return False
 
 def run_command_in_new_terminal(command_list, env=None, cwd=None):
-    if len(command_list) == 1 and ' ' in command_list[0]:
-         command_string = command_list[0]
+    if sys.platform == 'win32':
+        # --- WINDOWS IMPLEMENTATION ---
+        command_string = subprocess.list2cmdline(command_list)
+
+        # Wrap in cmd.exe so the window stays open after the game closes
+        wrapper = f'{command_string} & echo. & echo ---------------------------------------- & echo Process finished. Press any key to close... & pause >nul'
+
+        try:
+            # CREATE_NEW_CONSOLE (0x00000010) forces a new terminal window to pop up
+            subprocess.Popen(['cmd.exe', '/c', wrapper], env=env, cwd=cwd, creationflags=0x00000010)
+            return
+        except Exception as e:
+            print(f"Warning: Failed to launch cmd.exe: {e}")
+            return
     else:
-         command_string = shlex.join(command_list)
+        # --- LINUX IMPLEMENTATION ---
+        if len(command_list) == 1 and ' ' in command_list[0]:
+             command_string = command_list[0]
+        else:
+             command_string = shlex.join(command_list)
 
-    cd_command = f'cd {shlex.quote(cwd)} && ' if cwd else ''
-    wrapper_script = (
-        f'{cd_command}{command_string};'
-        ' echo;'
-        ' echo "----------------------------------------";'
-        ' echo "Process finished. Press Enter to close this window.";'
-        ' read'
-    )
+        cd_command = f'cd {shlex.quote(cwd)} && ' if cwd else ''
+        wrapper_script = (
+            f'{cd_command}{command_string};'
+            ' echo;'
+            ' echo "----------------------------------------";'
+            ' echo "Process finished. Press Enter to close this window.";'
+            ' read'
+        )
 
-    terminals = [
-        ('konsole',        '-e'),
-        ('gnome-terminal', '--'),
-        ('xfce4-terminal', '-e'),
-        ('xterm',          '-e'),
-    ]
+        clean_env = env.copy() if env else os.environ.copy()
+        for key in ['LD_LIBRARY_PATH', 'QT_PLUGIN_PATH']:
+            orig_key = f"{key}_ORIG"
+            if orig_key in clean_env:
+                clean_env[key] = clean_env[orig_key]
+            elif key in clean_env:
+                del clean_env[key]
 
-    # --- THE FIX: Clean the environment to prevent LD_LIBRARY_PATH poisoning ---
-    clean_env = env.copy() if env else os.environ.copy()
+        terminals = [
+            ('konsole',        '-e'),
+            ('gnome-terminal', '--'),
+            ('xfce4-terminal', '-e'),
+            ('xterm',          '-e'),
+        ]
 
-    # AppImage and PyInstaller save the original paths with an "_ORIG" suffix.
-    # We restore the original paths (or delete the overrides) before launching the host terminal.
-    for key in ['LD_LIBRARY_PATH', 'QT_PLUGIN_PATH']:
-        orig_key = f"{key}_ORIG"
-        if orig_key in clean_env:
-            clean_env[key] = clean_env[orig_key]
-        elif key in clean_env:
-            del clean_env[key]
-    # -------------------------------------------------------------------------
+        for term, flag in terminals:
+            if shutil.which(term):
+                try:
+                    final_command = [term, flag, 'bash', '-c', wrapper_script]
+                    subprocess.Popen(final_command, env=clean_env)
+                    return
+                except Exception as e:
+                    print(f"Warning: Failed to launch with {term}: {e}")
+                    continue
 
-    for term, flag in terminals:
-        if shutil.which(term):
-            try:
-                final_command = [term, flag, 'bash', '-c', wrapper_script]
-                # Pass the sanitized environment to the child process
-                subprocess.Popen(final_command, env=clean_env)
-                return
-            except Exception as e:
-                print(f"Warning: Failed to launch with {term}: {e}")
-                continue
-
-    print("Error: Could not automatically launch a terminal window.")
+        print("Error: Could not automatically launch a terminal window.")
 
 
 # --- Background Worker for Downloading ---
@@ -564,26 +574,30 @@ class KziGeneratorApp(QMainWindow):
 
         command = []
         if runtime in ["windows", "windows-1.1", "windows-1.2"]:
-            if proton_path:
-                command.extend([proton_path, "run"])
-                env = os.environ.copy()
-                compat_path = os.path.join(work_dir, 'compatdata')
-                os.makedirs(compat_path, exist_ok=True)
-                env['STEAM_COMPAT_DATA_PATH'] = compat_path
+            # ONLY use Wine/Proton if we are running the app on Linux
+            if sys.platform != 'win32':
+                if proton_path:
+                    command.extend([proton_path, "run"])
+                    env = os.environ.copy()
+                    compat_path = os.path.join(work_dir, 'compatdata')
+                    os.makedirs(compat_path, exist_ok=True)
+                    env['STEAM_COMPAT_DATA_PATH'] = compat_path
 
-                steam_install_paths = [
-                    os.path.expanduser("~/.steam/steam"),
-                    os.path.expanduser("~/.steam/root"),
-                    os.path.expanduser("~/.local/share/Steam")
-                ]
-                steam_client_path = next((path for path in steam_install_paths if os.path.isdir(path)), None)
+                    steam_install_paths = [
+                        os.path.expanduser("~/.steam/steam"),
+                        os.path.expanduser("~/.steam/root"),
+                        os.path.expanduser("~/.local/share/Steam")
+                    ]
+                    steam_client_path = next((path for path in steam_install_paths if os.path.isdir(path)), None)
 
-                if steam_client_path:
-                    env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = steam_client_path
+                    if steam_client_path:
+                        env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = steam_client_path
+                    else:
+                        QMessageBox.warning(self, "Steam Not Found", "Could not find Steam installation path. Proton may fail.")
                 else:
-                    QMessageBox.warning(self, "Steam Not Found", "Could not find Steam installation path. Proton may fail.")
-            else:
-                command.append("wine")
+                    command.append("wine")
+            # If on Windows, we do nothing here. The executable path will simply be launched natively below!
+
         elif runtime and runtime not in ["none", "linux", "linux-1.1"]:
             QMessageBox.critical(self, "Unsupported Runtime", f"The '{runtime}' runtime cannot be tested directly.")
             return
@@ -593,7 +607,12 @@ class KziGeneratorApp(QMainWindow):
             full_command_string += f" {params}"
 
         try:
-             command.extend(shlex.split(full_command_string))
+             # Prevent the POSIX parser from eating Windows backslashes
+             if sys.platform == 'win32':
+                 safe_command_string = full_command_string.replace('\\', '\\\\')
+                 command.extend(shlex.split(safe_command_string))
+             else:
+                 command.extend(shlex.split(full_command_string))
         except ValueError as e:
              QMessageBox.critical(self, "Parsing Error", f"Error parsing executable or parameters:\n{e}")
              return
