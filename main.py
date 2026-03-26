@@ -626,7 +626,14 @@ class KziGeneratorApp(QMainWindow):
             self.game_id_entry.setText(parsed_data.get('id', ''))
             self.gamescope_entry.setText(parsed_data.get('gamescopeoptions', ''))
 
-            runtime_val = parsed_data.get('runtime', 'none')
+            runtime_val = parsed_data.get('runtime', 'none').lower()
+
+            # Catch legacy or explicit 1.0 definitions and map them to our internal data values
+            if runtime_val == 'windows-1.0':
+                runtime_val = 'windows'
+            elif runtime_val == 'linux-1.0':
+                runtime_val = 'linux'
+
             idx = self.runtime_menu.findData(runtime_val)
             if idx >= 0:
                 self.runtime_menu.setCurrentIndex(idx)

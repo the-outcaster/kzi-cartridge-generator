@@ -8,26 +8,9 @@ Swiss army knife utility for [Kazeta](https://kazeta.org)/[Kazeta+](https://gith
 - create and burn audio CDs (Kazeta+ only)
 - create and edit themes for the BIOS (Kazeta+ only)
 
-## Screenshots
-<details>
-<summary><b>Click to expand Screenshot Gallery</b></summary>
+![Screenshot_20260326_110133](https://github.com/user-attachments/assets/8452b7aa-7d9e-4266-af35-5086209f6888)
 
-| Main Window | Sonic Adventure 2 Example |
-| :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/40e08e97-ef53-416c-bc1b-3002714e718a" width="400" /> | <img src="https://github.com/user-attachments/assets/7d7bbe8b-ec4f-4c84-8f83-bad1c535a9bd" width="400" /> |
-
-| Runtime/Package Manager | Runtime/Package Mounting |
-| :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/4f2c5a83-bb46-47bc-969b-4ba782991080" width="400" /> | <img src="https://github.com/user-attachments/assets/09ca5cad-2a0d-4076-91f9-72c4b8121cc5" width="400" /> |
-
-| ISO Creator | Audio CD Creator |
-| :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/4638f20e-3ddf-4cee-909c-39e22151aeac" width="400" /> | <img src="https://github.com/user-attachments/assets/0b877b73-d824-4510-9d7b-0f2b8488a7fb" width="400" /> |
-
-| Theme Creator | About Window |
-| :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/8b4a9775-d79c-436f-b28f-b0fb05d31dbd" width="400" /> | <img src="https://github.com/user-attachments/assets/bec18525-638b-4f08-b77c-b474c4490c19" width="400" /> |
-</details>
+Anti-AI users beware: **this is a vibe-coded tool.**
 
 ## Requirements
 - `python3.x` (you may run into issues with certain features if you use Python 3.14 or later)
@@ -47,7 +30,8 @@ Simply head over to the [Releases](https://github.com/the-outcaster/kzi-cartridg
 *NOTE: fetching icons from SteamGridDB requires you to log in to the website with your Steam account, and supplying your [API key](https://www.steamgriddb.com/profile/preferences/api) when the application asks you for it.*
 
 ## Development Requirements
-Python libraries needed: 
+Python libraries needed:
+- `pyqt6`
 - `pillow` 
 - `certifi`
 - `toml`
@@ -69,7 +53,7 @@ source venv/bin/activate
 
 Install required Python packages:
 
-`pip install pillow certifi toml pydub`
+`pip install pyqt6 pillow certifi toml pydub`
 
 Run the application from your terminal:
 
