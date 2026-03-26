@@ -706,7 +706,11 @@ class KziGeneratorApp(QMainWindow):
     def download_runtime(self, name):
         url = self.runtime_urls[name]
         filename = os.path.basename(url)
-        save_path, _ = QFileDialog.getSaveFileName(self, f"Save {name} Runtime", filename)
+
+        # Combine the default media path with the downloaded filename
+        initial_path = os.path.join(get_default_media_path(), filename)
+
+        save_path, _ = QFileDialog.getSaveFileName(self, f"Save {name} Runtime", initial_path)
 
         if not save_path:
             return
