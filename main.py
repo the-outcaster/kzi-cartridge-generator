@@ -458,7 +458,7 @@ class KziGeneratorApp(QMainWindow):
         self.preview_text.setPlainText(content)
 
     def browse_executable(self):
-        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
+        file_filter = "All files (*);;Windows Executables (*.exe);;Linux Executables (*.x86_64 *.sh *.AppImage);;NES ROMs (*.nes);;SNES ROMs (*.sfc);;Nintendo 64 ROMs (*.n64 *.z64);;Sega Genesis/Mega Drive ROMs (*.bin);;Dreamcast ROMs (*.cue *.chd *.gdi *.cdi);;GameCube/Wii ROMs (*.iso *.gcm *.wbfs *.rvz)"
         filepath, _ = QFileDialog.getOpenFileName(
             self, "Select Executable File", get_default_media_path(), file_filter
         )
